@@ -33,6 +33,7 @@ interface GameCanvasProps {
   levelsCleared: number;
   totalMetersRun: number;
   externalTuckRef: React.MutableRefObject<boolean>;
+  externalRotateRef: React.MutableRefObject<number>;
   triggerDiveRef: React.MutableRefObject<(() => void) | null>;
   onPhaseChange: (next: GamePhase) => void;
   onTelemetry: (t: RunTelemetry) => void;
@@ -56,6 +57,7 @@ export function GameCanvas({
   levelsCleared,
   totalMetersRun,
   externalTuckRef,
+  externalRotateRef,
   triggerDiveRef,
   onPhaseChange,
   onTelemetry,
@@ -93,6 +95,8 @@ export function GameCanvas({
     };
     keyInput: {
       tuck: boolean;
+      rotateLeft: boolean;
+      rotateRight: boolean;
     };
     input: InputState;
     lastTelemetryAt: number;
@@ -124,6 +128,8 @@ export function GameCanvas({
         aimStartY: 0,
       },
       keyInput: {
+        rotateLeft: false,
+        rotateRight: false,
         tuck: false,
       },
       input: {
@@ -214,6 +220,14 @@ export function GameCanvas({
         return;
       }
 
+      if (phaseRef.current === 'FALLING') {
+        if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+          e.preventDefault(); sim.keyInput.rotateLeft = true; return;
+        }
+        if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+          e.preventDefault(); sim.keyInput.rotateRight = true; return;
+        }
+      }
       if (e.code === 'ArrowDown' || e.code === 'KeyS') {
         e.preventDefault();
         sim.keyInput.tuck = true;
@@ -232,6 +246,8 @@ export function GameCanvas({
     const onKeyUp = (e: KeyboardEvent) => {
       const sim = simRef.current;
       if (!sim) return;
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') sim.keyInput.rotateLeft = false;
+      if (e.code === 'ArrowRight' || e.code === 'KeyD') sim.keyInput.rotateRight = false;
       if (e.code === 'ArrowDown' || e.code === 'KeyS' || e.code === 'Space') {
         sim.keyInput.tuck = false;
       }
@@ -241,6 +257,9 @@ export function GameCanvas({
       const sim = simRef.current;
       if (!sim) return;
       sim.keyInput.tuck = false;
+      sim.keyInput.rotateLeft = false;
+      sim.keyInput.rotateRight = false;
+      externalRotateRef.current = 0;
       sim.pointerInput.tuckPointers.clear();
       sim.pointerInput.aimPointerId = null;
       sim.input.aimActive = false;
@@ -291,6 +310,9 @@ export function GameCanvas({
           sim.keyInput.tuck ||
           sim.pointerInput.tuckPointers.size > 0 ||
           externalTuckRef.current;
+
+        const keyboardTurn = Number(sim.keyInput.rotateRight) - Number(sim.keyInput.rotateLeft);
+        sim.input.rotate = keyboardTurn || externalRotateRef.current;
 
         const FIXED_DT = 1 / 60;
         const frozen = pausedRef.current || document.hidden;
@@ -463,7 +485,7 @@ export function GameCanvas({
       ro.disconnect();
       soundEngine.updateWind(0, false);
     };
-  }, [externalTuckRef, onLevelComplete, onPhaseChange, onRunFailed, onTelemetry]);
+  }, [externalTuckRef, externalRotateRef, onLevelComplete, onPhaseChange, onRunFailed, onTelemetry]);
 
   // Pointer handlers on canvas for slingshot aiming (READY) and hold-to-tuck (FALLING)
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {

@@ -45,6 +45,10 @@ export interface Ragdoll {
   floorBounceCount: number;
   previousSubDt?: number;
   impactDepth?: number;
+  bodyAngle: number;
+  turnSpeed: number;
+  tuckAmount: number;
+  restPose: { x: number; y: number }[];
 }
 
 export interface Spike {
@@ -178,6 +182,7 @@ export interface DustParticle {
 }
 
 export interface InputState {
+  rotate?: number;
   tuck: boolean;
   aimActive: boolean;
   aimAngle: number;

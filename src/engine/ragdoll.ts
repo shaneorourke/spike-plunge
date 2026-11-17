@@ -10,6 +10,7 @@ import type {
   StickBone,
   VerletNode,
 } from '../types/game';
+import { stepControlledFlight } from './flightControl';
 import { soundEngine } from './audio';
 import { getShaftBoundsAtY } from './levelGen';
 
@@ -124,7 +125,14 @@ export function createRagdollOnPlatform(level: LevelConfig): Ragdoll {
     makeBone('knee-brace', 8, 10, 0, 0.09, false, undefined, true),
   ];
 
+  const mass = nodes.reduce((sum, n) => sum + n.mass, 0);
+  const comX = nodes.reduce((sum, n) => sum + n.mass * n.x, 0) / mass;
+  const comY = nodes.reduce((sum, n) => sum + n.mass * n.y, 0) / mass;
   return {
+    bodyAngle: 0,
+    turnSpeed: 0,
+    tuckAmount: 0,
+    restPose: nodes.map(n => ({ x: n.x - comX, y: n.y - comY })),
     nodes,
     bones,
     alive: true,
@@ -154,102 +162,12 @@ export function launchRagdoll(
   // Enforce upward-only launch (sin <= -0.22) so character always jumps up off the platform
   const vx = Math.cos(angleRad) * speed;
   const vy = Math.min(-speed * 0.22, Math.sin(angleRad) * speed);
-  const vMag = Math.hypot(vx, vy) || 1;
-  const fx = vx / vMag;
-  const fy = vy / vMag;
-  const dirSign = vx >= 0 ? 1 : -1;
-
-  // Compute mass-weighted center of mass so spin & limb offsets never skew the jump trajectory
-  let totalM = 0;
-  let comX = 0;
-  let comY = 0;
+  // Launch adds translation only. Rotation is entirely player controlled.
   for (const n of ragdoll.nodes) {
-    totalM += n.mass;
-    comX += n.mass * n.x;
-    comY += n.mass * n.y;
+    n.oldX = n.x - vx * dt;
+    n.oldY = n.y - vy * dt;
   }
-  comX /= totalM;
-  comY /= totalM;
-
-  // Angular spin torque driven by horizontal aim angle & launch power
-  const horizRatio = vx / vMag;
-  const omega =
-    (horizRatio * 1.4 + dirSign * 0.3) *
-    (0.45 + 0.75 * clampedPower) *
-    gravityScale;
-
-  // Individual limb push-off & reach offsets (lead side reaches into arc, trailing leg kicks off)
-  const leadArmElbow = dirSign > 0 ? 6 : 4;
-  const leadArmHand = dirSign > 0 ? 7 : 5;
-  const trailArmElbow = dirSign > 0 ? 4 : 6;
-  const trailArmHand = dirSign > 0 ? 5 : 7;
-  const leadKnee = dirSign > 0 ? 10 : 8;
-  const leadFoot = dirSign > 0 ? 11 : 9;
-  const trailKnee = dirSign > 0 ? 8 : 10;
-  const trailFoot = dirSign > 0 ? 9 : 11;
-
-  const nodeVxs = new Array<number>(ragdoll.nodes.length);
-  const nodeVys = new Array<number>(ragdoll.nodes.length);
-
-  for (let i = 0; i < ragdoll.nodes.length; i++) {
-    const n = ragdoll.nodes[i];
-    const rx = n.x - comX;
-    const ry = n.y - comY;
-
-    // Rigid-body rotational velocity component + base launch velocity
-    let nvx = vx - omega * ry;
-    let nvy = vy + omega * rx;
-
-    const kickScale = (0.55 + 0.65 * clampedPower) * gravityScale;
-    if (i === 0) {
-      // Head leans slightly into launch arc
-      nvx += fx * 20 * kickScale;
-      nvy += fy * 14 * kickScale;
-    } else if (i === leadArmElbow) {
-      nvx += (fx * 34 + dirSign * 14) * kickScale;
-      nvy -= 26 * kickScale;
-    } else if (i === leadArmHand) {
-      nvx += (fx * 62 + dirSign * 22) * kickScale;
-      nvy -= 46 * kickScale;
-    } else if (i === trailArmElbow) {
-      nvx -= (fx * 26 + dirSign * 18) * kickScale;
-      nvy -= 18 * kickScale;
-    } else if (i === trailArmHand) {
-      nvx -= (fx * 48 + dirSign * 28) * kickScale;
-      nvy -= 30 * kickScale;
-    } else if (i === leadKnee) {
-      nvx += fx * 26 * kickScale;
-      nvy -= 18 * kickScale;
-    } else if (i === leadFoot) {
-      nvx += fx * 12 * kickScale;
-      nvy += 28 * kickScale;
-    } else if (i === trailKnee) {
-      nvx -= fx * 36 * kickScale;
-      nvy += 24 * kickScale;
-    } else if (i === trailFoot) {
-      nvx -= fx * 64 * kickScale;
-      nvy += 38 * kickScale;
-    }
-
-    nodeVxs[i] = nvx;
-    nodeVys[i] = nvy;
-  }
-
-  // Re-center mass-weighted velocity to exact (vx, vy) so dotted aim preview matches 100%
-  let sumVx = 0;
-  let sumVy = 0;
-  for (let i = 0; i < ragdoll.nodes.length; i++) {
-    sumVx += ragdoll.nodes[i].mass * nodeVxs[i];
-    sumVy += ragdoll.nodes[i].mass * nodeVys[i];
-  }
-  const errVx = sumVx / totalM - vx;
-  const errVy = sumVy / totalM - vy;
-
-  for (let i = 0; i < ragdoll.nodes.length; i++) {
-    const n = ragdoll.nodes[i];
-    n.oldX = n.x - (nodeVxs[i] - errVx) * dt;
-    n.oldY = n.y - (nodeVys[i] - errVy) * dt;
-  }
+  ragdoll.turnSpeed = 0;
 
   ragdoll.previousSubDt = dt;
 
@@ -547,12 +465,16 @@ export function stepRagdollAndGore(
     const dragX = Math.pow(0.986, subDt * 180);
     const dragY = Math.pow(0.9965, subDt * 180);
 
+    if (ragdoll.alive) {
+      stepControlledFlight(ragdoll, level.gravity, input.rotate ?? 0, subDt);
+    }
     for (let i = 0; i < ragdoll.nodes.length; i++) {
       const n = ragdoll.nodes[i];
       if (n.bloodCooldown > 0) {
         n.bloodCooldown = Math.max(0, n.bloodCooldown - subDt);
       }
 
+      if (ragdoll.alive) continue;
       const vx = (n.x - n.oldX) * dragX;
       const vy = (n.y - n.oldY) * dragY;
 
@@ -563,29 +485,6 @@ export function stepRagdollAndGore(
 
       n.x += vx;
       n.y += vy + ay * subDt * subDt;
-
-      // Symmetric zero-sum airborne wind flutter on outstretched hands & feet when falling fast (untucked)
-      if (
-        ragdoll.alive &&
-        !ragdoll.tucking &&
-        (i === 5 || i === 7 || i === 9 || i === 11)
-      ) {
-        const speedSq = vx * vx + vy * vy;
-        const speedPx = Math.sqrt(speedSq) / subDt;
-        if (speedPx > 150) {
-          const flutterStrength = Math.min(1, (speedPx - 150) / 550);
-          const pairSign = i === 5 || i === 9 ? 1 : -1;
-          const isHand = i === 5 || i === 7;
-          const waveX = isHand
-            ? Math.sin(elapsedTime * 16) * 190 * flutterStrength
-            : Math.sin(elapsedTime * 13 + 1.4) * 165 * flutterStrength;
-          const waveY = isHand
-            ? Math.cos(elapsedTime * 13) * 115 * flutterStrength
-            : Math.cos(elapsedTime * 11 + 0.8) * 115 * flutterStrength;
-          n.x += pairSign * waveX * subDt * subDt;
-          n.y += pairSign * waveY * subDt * subDt;
-        }
-      }
 
       // Continuous blood spray from severed nodes
       if (!ragdoll.alive && n.bloodCooldown <= 0) {
@@ -607,152 +506,20 @@ export function stepRagdollAndGore(
       }
     }
 
-    // 2. Bone distance constraints + rebuilt tuck mechanics (pull in arms, legs, head + very slight controlled slow rotation)
-    if (ragdoll.alive && ragdoll.tucking) {
-      let totalM = 0;
-      let comX = 0;
-      let comY = 0;
-      let comVx = 0;
-      let comVy = 0;
-      for (const n of ragdoll.nodes) {
-        totalM += n.mass;
-        comX += n.mass * n.x;
-        comY += n.mass * n.y;
-        comVx += n.mass * (n.x - n.oldX);
-        comVy += n.mass * (n.y - n.oldY);
-      }
-      comX /= totalM;
-      comY /= totalM;
-      comVx /= totalM;
-      comVy /= totalM;
-
-      // Calculate current angular velocity omega around COM and clamp/smooth to a very gentle slow rotation
-      let numerator = 0;
-      let denominator = 0;
-      for (const n of ragdoll.nodes) {
-        const rx = n.x - comX;
-        const ry = n.y - comY;
-        const relVx = (n.x - n.oldX) - comVx;
-        const relVy = (n.y - n.oldY) - comVy;
-        numerator += n.mass * (rx * relVy - ry * relVx);
-        denominator += n.mass * (rx * rx + ry * ry);
-      }
-      const currentOmega = denominator > 0.001 ? numerator / denominator : 0;
-      const targetOmega = Math.max(-0.65, Math.min(0.65, currentOmega / subDt * 0.35));
-
-      for (const n of ragdoll.nodes) {
-        const rx = n.x - comX;
-        const ry = n.y - comY;
-        const rotVx = comVx - targetOmega * ry * subDt;
-        const rotVy = comVy + targetOmega * rx * subDt;
-        const curVx = n.x - n.oldX;
-        const curVy = n.y - n.oldY;
-        const blendedVx = curVx * 0.3 + rotVx * 0.7;
-        const blendedVy = curVy * 0.3 + rotVy * 0.7;
-
-        n.oldX = n.x - blendedVx;
-        n.oldY = n.y - blendedVy;
-      }
-    }
-
-    const iterations = 7;
+    // Living poses are already solved. Passive constraints are only for death.
+    const iterations = ragdoll.alive ? 1 : 7;
     for (let it = 0; it < iterations; it++) {
-      for (const bone of ragdoll.bones) {
-        if (bone.severed) continue;
-        if (bone.isPostureSpring && !ragdoll.alive) continue;
-
-        const a = ragdoll.nodes[bone.a];
-        const b = ragdoll.nodes[bone.b];
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        const d = Math.hypot(dx, dy) || 0.0001;
-
-        let targetLen = bone.length;
-        if (ragdoll.tucking && bone.isPostureSpring) {
-          targetLen = bone.length * 0.48;
-        }
-
-        const diff = (d - targetLen) / d;
-        const totalMass = a.mass + b.mass;
-        const wA = b.mass / totalMass;
-        const wB = a.mass / totalMass;
-        const k = bone.stiffness;
-
-        a.x += dx * diff * wA * k;
-        a.y += dy * diff * wA * k;
-        b.x -= dx * diff * wB * k;
-        b.y -= dy * diff * wB * k;
-      }
-
-      // Tuck pulls head, arms (elbows/hands), and legs (knees/feet) snugly toward torso
-      // while preserving exact center-of-mass position & velocity so fall direction is unchanged
-      if (ragdoll.tucking) {
-        let totalM = 0;
-        let comX0 = 0;
-        let comY0 = 0;
-        let comVx0 = 0;
-        let comVy0 = 0;
-        for (const n of ragdoll.nodes) {
-          totalM += n.mass;
-          comX0 += n.mass * n.x;
-          comY0 += n.mass * n.y;
-          comVx0 += n.mass * (n.x - n.oldX);
-          comVy0 += n.mass * (n.y - n.oldY);
-        }
-        comX0 /= totalM;
-        comY0 /= totalM;
-        comVx0 /= totalM;
-        comVy0 /= totalM;
-
-        const chest = ragdoll.nodes[2];
-        const pelvis = ragdoll.nodes[3];
-        const tuckPairs: [VerletNode, VerletNode, number][] = [
-          [chest, ragdoll.nodes[0], 13], // head tucked toward chest
-          [chest, ragdoll.nodes[4], 8], // elbowL
-          [chest, ragdoll.nodes[6], 8], // elbowR
-          [chest, ragdoll.nodes[5], 7], // handL
-          [chest, ragdoll.nodes[7], 7], // handR
-          [pelvis, ragdoll.nodes[8], 8], // kneeL
-          [pelvis, ragdoll.nodes[10], 8], // kneeR
-          [pelvis, ragdoll.nodes[9], 9], // footL
-          [pelvis, ragdoll.nodes[11], 9], // footR
-        ];
-        for (const [anchor, limb, maxD] of tuckPairs) {
-          const dx = limb.x - anchor.x;
-          const dy = limb.y - anchor.y;
-          const d = Math.hypot(dx, dy) || 0.0001;
-          if (d > maxD) {
-            const corr = ((d - maxD) / d) * 0.35;
-            limb.x -= dx * corr;
-            limb.y -= dy * corr;
-          }
-        }
-
-        let comX1 = 0;
-        let comY1 = 0;
-        let comVx1 = 0;
-        let comVy1 = 0;
-        for (const n of ragdoll.nodes) {
-          comX1 += n.mass * n.x;
-          comY1 += n.mass * n.y;
-          comVx1 += n.mass * (n.x - n.oldX);
-          comVy1 += n.mass * (n.y - n.oldY);
-        }
-        comX1 /= totalM;
-        comY1 /= totalM;
-        comVx1 /= totalM;
-        comVy1 /= totalM;
-
-        const fixX = comX0 - comX1;
-        const fixY = comY0 - comY1;
-        const fixVx = comVx1 - comVx0;
-        const fixVy = comVy1 - comVy0;
-        for (const n of ragdoll.nodes) {
-          n.x += fixX;
-          n.y += fixY;
-          n.oldX += fixX + fixVx;
-          n.oldY += fixY + fixVy;
-        }
+      if (!ragdoll.alive) for (const bone of ragdoll.bones) {
+        if (bone.severed || bone.isPostureSpring) continue;
+        const a = ragdoll.nodes[bone.a], b = ragdoll.nodes[bone.b];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const length = Math.hypot(dx, dy) || .0001;
+        const correction = (length - bone.length) / length * bone.stiffness;
+        const mass = a.mass + b.mass;
+        a.x += dx * correction * b.mass / mass;
+        a.y += dy * correction * b.mass / mass;
+        b.x -= dx * correction * a.mass / mass;
+        b.y -= dy * correction * a.mass / mass;
       }
 
       // 3. Solid boundary collisions inside solver (open sky above rim, outer cliff decks, V-shaped shaft walls)

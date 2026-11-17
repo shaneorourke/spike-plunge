@@ -4,6 +4,7 @@ import {
   ChevronDown,
   Layers,
   RotateCcw,
+  RotateCw,
   Skull,
   Trophy,
   Users,
@@ -100,6 +101,7 @@ export default function App() {
   });
 
   // Shared ref for bottom thumb-zone tuck button
+  const rotateRef = useRef(0);
   const tuckRef = useRef<boolean>(false);
   const [tuckActive, setTuckActive] = useState<boolean>(false);
   const triggerDiveRef = useRef<(() => void) | null>(null);
@@ -117,9 +119,20 @@ export default function App() {
   };
 
   const resetThumbFlags = () => {
+    rotateRef.current = 0;
     tuckRef.current = false;
     setTuckActive(false);
   };
+
+  useEffect(() => {
+    const release = () => {
+      rotateRef.current = 0;
+      tuckRef.current = false;
+      setTuckActive(false);
+    };
+    window.addEventListener('blur', release);
+    return () => window.removeEventListener('blur', release);
+  }, []);
 
   const handleToggleMute = () => {
     const next = !muted;
@@ -391,6 +404,7 @@ export default function App() {
               levelsCleared={progress.totalJumpsCleared}
               totalMetersRun={totalMetersRun}
               externalTuckRef={tuckRef}
+              externalRotateRef={rotateRef}
               triggerDiveRef={triggerDiveRef}
               onPhaseChange={setPhase}
               onTelemetry={setTelemetry}
@@ -431,7 +445,7 @@ export default function App() {
                       onChange={e => aimControlRef.current?.({...aim, power: Number(e.target.value) / 100})} className="w-full mt-2 accent-amber-400" />
                   </label>
                 </div>
-                <p className="text-[10px] text-slate-500 mt-2">Drag to launch · ↑↓ angle · ←→ power · Shift for fine aim</p>
+                <p className="text-[10px] text-slate-500 mt-2">Drag to launch · In flight: A/D or ←→ rotate · Space/S tucks</p>
               </div>}
             </>}
 
@@ -448,7 +462,7 @@ export default function App() {
                   <p className="text-sm text-slate-300 leading-relaxed mb-5">
                     Aim your jump off the platform into the V-shaped spike
                     chute and land in one piece. Eight brutal shaft designs return
-                    with tighter clearances. Study the route. Refine your aim. Earn the landing.
+                    with tighter clearances. Study the route. Control your body angle. Earn the landing.
                   </p>
 
                   <div className="mb-5">
@@ -732,23 +746,28 @@ export default function App() {
                 {scoutOpen ? 'Return to launch' : 'Launch · Space'}
               </button>
             ) : phase === 'FALLING' ? (
-              <button
-                type="button"
-                onPointerDown={(e) => {
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                  setTuckFlag(true);
-                }}
-                onPointerUp={() => setTuckFlag(false)}
-                onPointerCancel={() => setTuckFlag(false)}
-                className={`w-full h-full min-h-[48px] rounded-lg font-display text-xl font-extrabold tracking-wide uppercase flex items-center justify-center gap-2 transition-colors select-none whitespace-nowrap ${
-                  tuckActive || telemetry.tucking
-                    ? 'bg-amber-500 text-slate-950'
-                    : 'bg-slate-800/90 border border-amber-500/40 text-amber-400 hover:bg-slate-700'
-                }`}
-              >
-                <ArrowDownToLine className="w-5 h-5" />
-                Hold to Tuck · Curl Head &amp; Limbs In
-              </button>
+              <>
+                <button type="button" aria-label="Rotate counterclockwise" title="Rotate left · A / Left arrow"
+                  onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); rotateRef.current = -1; }}
+                  onPointerUp={() => { if (rotateRef.current === -1) rotateRef.current = 0; }}
+                  onPointerCancel={() => { if (rotateRef.current === -1) rotateRef.current = 0; }}
+                  className="h-full min-w-14 rounded-lg bg-slate-800 text-cyan-300 flex items-center justify-center select-none">
+                  <RotateCcw className="w-6 h-6" />
+                </button>
+                <button type="button"
+                  onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); setTuckFlag(true); }}
+                  onPointerUp={() => setTuckFlag(false)} onPointerCancel={() => setTuckFlag(false)}
+                  className={`flex-1 h-full min-h-[48px] rounded-lg font-display text-xl font-extrabold uppercase select-none ${tuckActive || telemetry.tucking ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 border border-amber-500/40 text-amber-400'}`}>
+                  <ArrowDownToLine className="w-4 h-4 inline mr-1" /> Hold to tuck
+                </button>
+                <button type="button" aria-label="Rotate clockwise" title="Rotate right · D / Right arrow"
+                  onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); rotateRef.current = 1; }}
+                  onPointerUp={() => { if (rotateRef.current === 1) rotateRef.current = 0; }}
+                  onPointerCancel={() => { if (rotateRef.current === 1) rotateRef.current = 0; }}
+                  className="h-full min-w-14 rounded-lg bg-slate-800 text-cyan-300 flex items-center justify-center select-none">
+                  <RotateCw className="w-6 h-6" />
+                </button>
+              </>
             ) : (
               <div className="w-full flex items-center justify-between px-2 text-xs text-slate-400">
                 <span>
@@ -779,7 +798,7 @@ export default function App() {
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
                   ↑↓ elevation · ←→ power · Shift for fine aim · Space to launch.
-                  Hold Space / S / screen to tuck. R retries after impact.
+                  In flight: A/D or ←→ rotate; release to hold the angle. Space/S tucks. R retries.
                 </p>
               </div>
               <button
