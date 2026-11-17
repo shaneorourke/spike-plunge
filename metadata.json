@@ -1,0 +1,8 @@
+{
+  "name": "Spike Plunge",
+  "description": "A physics-based mobile ragdoll diving game through infinitely escalating spike-lined shafts with visceral gore and jump leaderboards.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
