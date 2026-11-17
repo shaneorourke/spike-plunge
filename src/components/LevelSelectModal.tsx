@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, Lock, Play, RotateCcw, X } from 'lucide-react';
 import { generateLevel } from '../engine/levelGen';
 import type { PlayerProgress } from '../types/game';
@@ -21,11 +21,20 @@ export function LevelSelectModal({
   onClose,
 }: LevelSelectModalProps) {
   const [confirmReset, setConfirmReset] = useState(false);
+  const [page,setPage]=useState(0);
+  const [jump,setJump]=useState('');
+  const pageSize=24;
+  useEffect(()=>{
+    if(open) {setPage(Math.floor((currentStage-1)/pageSize));setJump('');}
+  },[open,currentStage]);
 
   if (!open) return null;
 
   const maxVisibleStage = Math.max(12, progress.highestStageReached + 3);
-  const stages = Array.from({ length: maxVisibleStage }, (_, i) => i + 1);
+  const lastPage=Math.max(0,Math.ceil(maxVisibleStage/pageSize)-1);
+  const safePage=Math.min(page,lastPage);
+  const firstStage=safePage*pageSize+1;
+  const stages=Array.from({length:Math.min(pageSize,maxVisibleStage-firstStage+1)},(_,i)=>firstStage+i);
 
   return (
     <div
@@ -61,6 +70,22 @@ export function LevelSelectModal({
           >
             <X className="w-5 h-5" />
           </button>
+        </div>
+
+        <div className="px-4 py-2 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
+          <button type="button" disabled={safePage===0} onClick={()=>setPage(p=>Math.max(0,p-1))}
+            className="min-h-10 px-2 rounded bg-slate-800 text-xs text-slate-200 disabled:opacity-30">Earlier</button>
+          <span className="text-[10px] font-mono text-slate-400">{firstStage}–{stages[stages.length-1]}</span>
+          <form className="flex items-center gap-1" onSubmit={e=>{
+            e.preventDefault();const stage=Math.max(1,Math.min(maxVisibleStage,Math.floor(Number(jump)||1)));
+            setPage(Math.floor((stage-1)/pageSize));
+          }}>
+            <input aria-label="Find stage" type="number" min="1" max={maxVisibleStage} step="1" value={jump}
+              onChange={e=>setJump(e.target.value)} placeholder="#" className="w-16 h-9 px-2 rounded bg-slate-950 border border-slate-700 text-xs font-mono text-white" />
+            <button type="submit" className="min-h-10 px-2 text-xs text-amber-400">Go</button>
+          </form>
+          <button type="button" disabled={safePage>=lastPage} onClick={()=>setPage(p=>Math.min(lastPage,p+1))}
+            className="min-h-10 px-2 rounded bg-slate-800 text-xs text-slate-200 disabled:opacity-30">Later</button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 grid grid-cols-3 sm:grid-cols-4 gap-2.5 content-start">

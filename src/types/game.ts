@@ -104,7 +104,10 @@ export interface WindZone {
   id: string;
   yStart: number;
   yEnd: number;
-  forceX: number;
+  velocityX: number;
+  velocityY: number;
+  density: number;
+  label: string;
 }
 
 export interface ShaftPoint {
@@ -113,7 +116,16 @@ export interface ShaftPoint {
   right: number;
 }
 
+export interface FlightPlan {
+  elevation: number;
+  power: number;
+  segments: { from: number; to: number; tuck: boolean; angle: number }[];
+}
+
 export interface LevelConfig {
+  reference: FlightPlan;
+  seed: string;
+  family: string;
   profile: ShaftPoint[];
   briefing: string;
   tier: string;
@@ -201,6 +213,9 @@ export interface RunTelemetry {
   limbsLost: number;
   tucking: boolean;
   windForce: number;
+  verticalWind?: number;
+  airLabel?: string;
+  dragArea?: number;
   fatalCause: string | null;
 }
 

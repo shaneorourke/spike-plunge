@@ -6,10 +6,12 @@ import type {
   InputState,
   LevelConfig,
   Ragdoll,
-  Spike,
   StickBone,
   VerletNode,
 } from '../types/game';
+import { nodeHitsSpike } from './collision';
+import { BODY_NODES } from './body';
+import { airAt, launchVelocity } from './aerodynamics';
 import { stepControlledFlight } from './flightControl';
 import { soundEngine } from './audio';
 import { getShaftBoundsAtY } from './levelGen';
@@ -67,21 +69,7 @@ export function createRagdollOnPlatform(level: LevelConfig): Ragdoll {
     bloodCooldown: 0,
   });
 
-  // 12-node articulated stickman
-  const nodes: VerletNode[] = [
-    makeNode('head', edgeX + dir * 2, footY - 54, 8.5, 1.1), // 0
-    makeNode('neck', edgeX, footY - 43, 3.5, 0.9), // 1
-    makeNode('chest', edgeX - dir * 1, footY - 33, 4.5, 1.3), // 2
-    makeNode('pelvis', edgeX - dir * 2, footY - 21, 4.5, 1.3), // 3
-    makeNode('elbowL', edgeX - dir * 8, footY - 36, 3, 0.6), // 4
-    makeNode('handL', edgeX - dir * 4, footY - 26, 3.5, 0.5), // 5
-    makeNode('elbowR', edgeX + dir * 9, footY - 36, 3, 0.6), // 6
-    makeNode('handR', edgeX + dir * 14, footY - 28, 3.5, 0.5), // 7
-    makeNode('kneeL', edgeX - dir * 5, footY - 10, 3.5, 0.7), // 8
-    makeNode('footL', edgeX - dir * 6, footY, 4, 0.6), // 9
-    makeNode('kneeR', edgeX + dir * 4, footY - 10, 3.5, 0.7), // 10
-    makeNode('footR', edgeX + dir * 3, footY, 4, 0.6), // 11
-  ];
+  const nodes = BODY_NODES.map(n => makeNode(n.id, edgeX + dir * n.x, footY + n.y, n.radius, n.mass));
 
   const makeBone = (
     id: string,
@@ -154,14 +142,8 @@ export function launchRagdoll(
   dt: number,
   gore?: GoreWorld
 ): void {
-  // Scale launch speed with sqrt(gravity) so jump arc height & reach stay consistent across levels
-  const gravityScale = Math.sqrt(Math.max(1, gravity) / 820);
-  const clampedPower = Math.max(0.15, Math.min(1, power));
-  const speed = (180 + clampedPower * 420) * gravityScale;
+  const { vx, vy } = launchVelocity(angleRad, power, gravity);
 
-  // Enforce upward-only launch (sin <= -0.22) so character always jumps up off the platform
-  const vx = Math.cos(angleRad) * speed;
-  const vy = Math.min(-speed * 0.22, Math.sin(angleRad) * speed);
   // Launch adds translation only. Rotation is entirely player controlled.
   for (const n of ragdoll.nodes) {
     n.oldX = n.x - vx * dt;
@@ -191,86 +173,18 @@ export function launchRagdoll(
 }
 
 export function getRagdollCenter(ragdoll: Ragdoll): { x: number; y: number } {
-  // Follow torso/chest if intact, else pelvis/head
-  const chest = ragdoll.nodes[2];
-  const pelvis = ragdoll.nodes[3];
-  return {
-    x: (chest.x + pelvis.x) * 0.5,
-    y: (chest.y + pelvis.y) * 0.5,
-  };
+  if (!ragdoll.alive) return { x: (ragdoll.nodes[2].x + ragdoll.nodes[3].x) / 2, y: (ragdoll.nodes[2].y + ragdoll.nodes[3].y) / 2 };
+  const mass = ragdoll.nodes.reduce((sum,n) => sum+n.mass,0);
+  return { x: ragdoll.nodes.reduce((sum,n) => sum+n.x*n.mass,0)/mass,
+    y: ragdoll.nodes.reduce((sum,n) => sum+n.y*n.mass,0)/mass };
 }
 
 export function getRagdollSpeed(ragdoll: Ragdoll, dt: number): number {
-  const chest = ragdoll.nodes[2];
-  const subDt = (dt || 1 / 60) / 3;
-  const vx = (chest.x - chest.oldX) / subDt;
-  const vy = (chest.y - chest.oldY) / subDt;
-  return Math.hypot(vx, vy);
-}
-
-function pointInTriangle(
-  px: number,
-  py: number,
-  ax: number,
-  ay: number,
-  bx: number,
-  by: number,
-  cx: number,
-  cy: number
-): boolean {
-  const v0x = cx - ax;
-  const v0y = cy - ay;
-  const v1x = bx - ax;
-  const v1y = by - ay;
-  const v2x = px - ax;
-  const v2y = py - ay;
-
-  const dot00 = v0x * v0x + v0y * v0y;
-  const dot01 = v0x * v1x + v0y * v1y;
-  const dot02 = v0x * v2x + v0y * v2y;
-  const dot11 = v1x * v1x + v1y * v1y;
-  const dot12 = v1x * v2x + v1y * v2y;
-
-  const denom = dot00 * dot11 - dot01 * dot01;
-  if (Math.abs(denom) < 1e-6) return false;
-  const invDenom = 1 / denom;
-  const u = (dot11 * dot02 - dot01 * dot12) * invDenom;
-  const v = (dot00 * dot12 - dot01 * dot02) * invDenom;
-  return u >= 0 && v >= 0 && u + v <= 1;
-}
-
-function distToSegment(
-  px: number,
-  py: number,
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number
-): number {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  const lenSq = dx * dx + dy * dy;
-  if (lenSq < 1e-6) return Math.hypot(px - x1, py - y1);
-  let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
-  t = Math.max(0, Math.min(1, t));
-  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
-}
-
-function nodeHitsSpike(node: VerletNode, spike: Spike): boolean {
-  const ax = spike.baseX1;
-  const ay = spike.baseY1;
-  const bx = spike.baseX2;
-  const by = spike.baseY2;
-  const cx = spike.tipX;
-  const cy = spike.tipY;
-
-  if (pointInTriangle(node.x, node.y, ax, ay, bx, by, cx, cy)) {
-    return true;
-  }
-  const r = node.radius * 0.82;
-  if (distToSegment(node.x, node.y, ax, ay, cx, cy) <= r) return true;
-  if (distToSegment(node.x, node.y, bx, by, cx, cy) <= r) return true;
-  return false;
+  const subDt = ragdoll.previousSubDt ?? (dt || 1 / 60) / 3;
+  const mass = ragdoll.nodes.reduce((sum,n) => sum+n.mass,0);
+  const vx = ragdoll.nodes.reduce((sum,n) => sum+(n.x-n.oldX)*n.mass,0) / mass / subDt;
+  const vy = ragdoll.nodes.reduce((sum,n) => sum+(n.y-n.oldY)*n.mass,0) / mass / subDt;
+  return Math.hypot(vx,vy);
 }
 
 const BLOOD_PALETTE = ['#DC2626', '#B91C1C', '#991B1B', '#EF4444', '#7F1D1D'];
@@ -421,7 +335,7 @@ function triggerFatalCollision(
 }
 
 export function stepHazards(_level: LevelConfig, _elapsedTime: number): void {
-  // No mid-shaft moving obstacles; pure V-shaped spike chute
+  // Air fields are spatial and deterministic; no clock-driven hazard motion.
 }
 
 export function stepRagdollAndGore(
@@ -461,12 +375,13 @@ export function stepRagdollAndGore(
   ragdoll.previousSubDt = subDt;
 
   for (let step = 0; step < subSteps; step++) {
-    // 1. Verlet integration + forces (tuck does NOT alter drag or gravity — pure limb avoidance)
+    const previousPositions=ragdoll.alive ? ragdoll.nodes.map(n=>({x:n.x,y:n.y})) : undefined;
+    // 1. Controlled flight with pose-dependent aerodynamic drag; passive Verlet after impact.
     const dragX = Math.pow(0.986, subDt * 180);
     const dragY = Math.pow(0.9965, subDt * 180);
 
     if (ragdoll.alive) {
-      stepControlledFlight(ragdoll, level.gravity, input.rotate ?? 0, subDt);
+      stepControlledFlight(ragdoll, level.gravity, input.rotate ?? 0, subDt, level);
     }
     for (let i = 0; i < ragdoll.nodes.length; i++) {
       const n = ragdoll.nodes[i];
@@ -503,6 +418,27 @@ export function stepRagdollAndGore(
             color: '#DC2626',
           });
         }
+      }
+    }
+
+    if (ragdoll.alive) {
+      const penetration = Math.max(0,...ragdoll.nodes.map(n=>n.y+n.radius-level.floorY));
+      if(penetration>0) {
+        const speed=getRagdollSpeed(ragdoll,rawDt);
+        // Resolve a living diver as one controlled body. Per-node floor
+        // corrections used to deform the pose and create artificial rebounds.
+        for(const n of ragdoll.nodes) {
+          const vx=n.x-n.oldX;
+          n.y-=penetration; n.oldY=n.y;
+          n.oldX=n.x-vx*.65;
+        }
+        if(ragdoll.floorBounceCount===0 && speed>210) {
+          soundEngine.playFloorImpact(Math.min(1,speed/900));
+          for(let d=0;d<8;d++) gore.dust.push({x:getRagdollCenter(ragdoll).x+(Math.random()-.5)*20,
+            y:level.floorY-2,vx:(Math.random()-.5)*100,vy:-20-Math.random()*60,
+            radius:2+Math.random()*3,life:0,maxLife:.4});
+        }
+        ragdoll.floorBounceCount++;
       }
     }
 
@@ -582,7 +518,7 @@ export function stepRagdollAndGore(
           }
         }
 
-        if (n.y + n.radius > level.floorY) {
+        if (!ragdoll.alive && n.y + n.radius > level.floorY) {
           const vy = (n.y - n.oldY) / subDt;
           n.y = level.floorY - n.radius;
           // Floor impact dust & sound on heavy slam
@@ -622,10 +558,10 @@ export function stepRagdollAndGore(
 
       // Wall Spikes (broadphase Y filter for performance)
       for (const sp of level.wallSpikes) {
-        if (n.y + n.radius < sp.baseY1 - 4 || n.y - n.radius > sp.baseY2 + 4) {
+        if (Math.max(n.y,previousPositions?.[i].y??n.y) + n.radius < sp.baseY1 - 4 || Math.min(n.y,previousPositions?.[i].y??n.y) - n.radius > sp.baseY2 + 4) {
           continue;
         }
-        if (nodeHitsSpike(n, sp)) {
+        if (nodeHitsSpike(n, sp, previousPositions?.[i])) {
           sp.stained = 1;
           const nx = sp.side === 'left' ? 1 : -1;
           triggerFatalCollision(
@@ -667,7 +603,7 @@ export function stepRagdollAndGore(
   // Step gore particles & decals
   stepGoreWorld(gore, level, rawDt, timeScale, elapsedTime);
 
-  return { currentWind: 0 };
+  return { currentWind: airAt(level, getRagdollCenter(ragdoll).y).velocityX };
 }
 
 function stepGoreWorld(

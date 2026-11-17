@@ -1,7 +1,7 @@
 import type { LevelConfig } from '../types/game';
 
 export interface AimSettings { elevation: number; power: number }
-export const DEFAULT_AIM: AimSettings = { elevation: 55, power: .15 };
+export const DEFAULT_AIM: AimSettings = { elevation: 82, power: .15 };
 export function clampAim(aim: AimSettings): AimSettings {
   return { elevation: Math.max(13, Math.min(85, aim.elevation)),
     power: Math.max(.15, Math.min(1, aim.power)) };

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { soundEngine } from '../engine/audio';
+import { airAt, projectedArea } from '../engine/aerodynamics';
 import { DEFAULT_AIM, clampAim, launchAngle, readAim, type AimSettings } from '../engine/aim';
 import { generateLevel } from '../engine/levelGen';
 import {
@@ -319,7 +320,6 @@ export function GameCanvas({
         sim.accumulator = frozen ? 0 : Math.min(0.1, sim.accumulator + rawDt);
 
         const curPhase = phaseRef.current;
-        let currentWind = 0;
         let speedKmh = 0;
 
         while (sim.accumulator >= FIXED_DT) {
@@ -328,7 +328,7 @@ export function GameCanvas({
           stepHazards(sim.level, sim.elapsed);
 
           if (!frozen && (curPhase === 'FALLING' || curPhase === 'DYING')) {
-            const res = stepRagdollAndGore(
+            stepRagdollAndGore(
               sim.ragdoll,
               sim.level,
               sim.input,
@@ -336,7 +336,6 @@ export function GameCanvas({
               FIXED_DT,
               sim.elapsed
             );
-            currentWind = res.currentWind;
             speedKmh = getRagdollSpeed(sim.ragdoll, FIXED_DT) * 0.14;
           }
         }
@@ -443,14 +442,15 @@ export function GameCanvas({
           const totalHeightMeters = Math.round(
             (sim.level.floorY - sim.level.platformY) / 10
           );
-          const currentDepthMeters = Math.max(
+          const reachedFloor = phaseRef.current === 'LANDED';
+          const currentDepthMeters = reachedFloor ? totalHeightMeters : Math.max(
             0,
             Math.min(
               totalHeightMeters,
               Math.round((center.y - sim.level.platformY) / 10)
             )
           );
-          const progressRatio = Math.max(
+          const progressRatio = reachedFloor ? 1 : Math.max(
             0,
             Math.min(
               1,
@@ -459,7 +459,16 @@ export function GameCanvas({
             )
           );
 
+          const air = airAt(sim.level, center.y);
+          const mass = sim.ragdoll.nodes.reduce((sum,n) => sum+n.mass,0);
+          const step = sim.ragdoll.previousSubDt ?? 1/180;
+          const vx = sim.ragdoll.nodes.reduce((sum,n) => sum+(n.x-n.oldX)*n.mass,0)/mass/step;
+          const vy = sim.ragdoll.nodes.reduce((sum,n) => sum+(n.y-n.oldY)*n.mass,0)/mass/step;
+          const activeZones = sim.level.windZones.filter(z => center.y > z.yStart && center.y < z.yEnd);
           onTelemetry({
+            verticalWind: air.velocityY,
+            airLabel: activeZones.map(z=>z.label).join(' + ') || 'Still air',
+            dragArea: projectedArea(sim.ragdoll.bodyAngle,sim.ragdoll.tuckAmount,vx-air.velocityX,vy-air.velocityY),
             level: levelNumberRef.current,
             levelsCleared: levelsClearedRef.current,
             currentDepthMeters,
@@ -470,7 +479,7 @@ export function GameCanvas({
             totalMetersRun: totalMetersRunRef.current,
             limbsLost: sim.ragdoll.limbsLost,
             tucking: sim.ragdoll.tucking,
-            windForce: Math.round(currentWind),
+            windForce: Math.round(air.velocityX),
             fatalCause: sim.ragdoll.fatalCause,
           });
         }

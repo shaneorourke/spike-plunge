@@ -445,9 +445,17 @@ export default function App() {
                       onChange={e => aimControlRef.current?.({...aim, power: Number(e.target.value) / 100})} className="w-full mt-2 accent-amber-400" />
                   </label>
                 </div>
-                <p className="text-[10px] text-slate-500 mt-2">Drag to launch · In flight: A/D or ←→ rotate · Space/S tucks</p>
+                <p className="text-[10px] text-slate-500 mt-2">Preview: open body · Tuck and rotation change your flight</p>
               </div>}
             </>}
+
+            {phase === 'FALLING' && <div className="pointer-events-none absolute top-10 left-3 right-3 flex justify-between gap-2 text-[10px] font-mono">
+              <span className="rounded-md border border-cyan-800/70 bg-[#0b1420]/90 text-cyan-300 px-2 py-1.5">
+                {telemetry.airLabel ?? 'Still air'} {Math.abs(telemetry.windForce) > 5 ? `${telemetry.windForce > 0 ? '→' : '←'} ${Math.abs(telemetry.windForce/10).toFixed(1)}m/s` : ''}
+                {Math.abs(telemetry.verticalWind ?? 0) > 5 ? ` ${(telemetry.verticalWind ?? 0) > 0 ? '↓' : '↑'} ${Math.abs((telemetry.verticalWind ?? 0)/10).toFixed(1)}m/s` : ''}
+              </span>
+              <span className="rounded-md bg-[#0b1420]/90 text-amber-300 px-2 py-1.5">{(telemetry.dragArea ?? .4) < .5 ? 'STREAMLINED' : (telemetry.dragArea ?? .4) > .95 ? 'AIRBRAKING' : 'OPEN'}</span>
+            </div>}
 
             {/* TITLE OVERLAY */}
             {phase === 'TITLE' && (
@@ -460,9 +468,10 @@ export default function App() {
                     Spike Plunge
                   </h1>
                   <p className="text-sm text-slate-300 leading-relaxed mb-5">
-                    Aim your jump off the platform into the V-shaped spike
-                    chute and land in one piece. Eight brutal shaft designs return
-                    with tighter clearances. Study the route. Control your body angle. Earn the landing.
+                    Aim into the shaft, then use your body as an airbrake.
+                    Tuck to cut through wind; open and turn broadside to slow
+                    down or catch a current. Every stage has a distinct route
+                    and airflow.
                   </p>
 
                   <div className="mb-5">
@@ -670,10 +679,10 @@ export default function App() {
 
                   <p className="text-xs text-slate-300 mb-3 leading-relaxed">
                     {lastSummary?.cause.includes('untucked')
-                      ? 'An exposed limb caught the spikes. Tuck earlier and hold through the constriction.'
+                      ? 'An exposed limb caught the spikes. Fold before the constriction; open in the wider air chambers.'
                       : lastSummary?.cause.includes(levelMeta.platformSide === 'left' ? 'Left' : 'Right')
-                      ? 'Try more horizontal reach: add power or lower the elevation. Change one setting at a time.'
-                      : 'Try less horizontal reach: reduce power or raise the elevation. Change one setting at a time.'}
+                      ? 'Try more reach or catch the air stream for longer. Tuck and body angle now change your trajectory.'
+                      : 'Try less reach or catch less of the air stream. Compare your pose changes with the shaft survey.'}
                   </p>
                   <p className="text-[10px] font-mono text-cyan-400 mb-3">Aim remembered · R to retry instantly</p>
                   <div className="grid grid-cols-3 gap-2 py-3 border-y border-slate-800 mb-5">

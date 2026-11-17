@@ -6,6 +6,7 @@ import type {
   Ragdoll,
   Spike,
 } from '../types/game';
+import { advanceAirMotion, airAt, launchVelocity } from './aerodynamics';
 import { drawRagdollCharacter } from './characterDraw';
 import { getShaftBoundsAtY } from './levelGen';
 import { getRagdollCenter, type GoreWorld } from './ragdoll';
@@ -160,6 +161,40 @@ export function renderGame(params: RenderParams): void {
     }
   }
 
+  // Visible air layers use the same spatial bounds as the force model.
+  for (const zone of level.windZones) {
+    const top = Math.max(zone.yStart, visibleTop), bottom = Math.min(zone.yEnd, visibleBottom);
+    if (bottom <= top) continue;
+    const dense = zone.density > 1.7, thin = zone.density < .8;
+    ctx.fillStyle = dense ? 'rgba(251,191,36,.065)' : thin ? 'rgba(196,181,253,.065)' : zone.velocityY > 0 ? 'rgba(251,113,133,.065)' : 'rgba(56,189,248,.065)';
+    ctx.fillRect(0, top, level.worldWidth, bottom-top);
+    ctx.save();
+    ctx.strokeStyle = dense ? 'rgba(251,191,36,.25)' : thin ? 'rgba(196,181,253,.25)' : 'rgba(103,232,249,.25)';
+    ctx.lineWidth = 1;
+    const direction = Math.atan2(zone.velocityY, zone.velocityX || .001);
+    for (let y = Math.floor(top/64)*64; y < bottom; y += 64) {
+      if (y < top + 12 || y > bottom - 12) continue;
+      const bounds = getShaftBoundsAtY(level,y);
+      for (let x = bounds.left + 22; x < bounds.right - 18; x += 40) {
+        if(Math.hypot(zone.velocityX,zone.velocityY)<1) {
+          ctx.fillStyle=thin ? 'rgba(196,181,253,.25)' : 'rgba(251,191,36,.25)';
+          ctx.beginPath();ctx.arc(x,y,1.2,0,Math.PI*2);ctx.fill();continue;
+        }
+        ctx.save(); ctx.translate(x,y); ctx.rotate(direction);
+        const travel = (elapsedTime * 18) % 9;
+        ctx.beginPath(); ctx.moveTo(-9+travel,0); ctx.lineTo(7+travel,0);
+        ctx.moveTo(3+travel,-3); ctx.lineTo(7+travel,0); ctx.lineTo(3+travel,3); ctx.stroke(); ctx.restore();
+      }
+    }
+    if (zone.yStart > visibleTop && zone.yStart < visibleBottom) {
+      const bounds = getShaftBoundsAtY(level,zone.yStart);
+      ctx.fillStyle = dense ? '#FBBF24' : thin ? '#C4B5FD' : '#67E8F9'; ctx.textAlign='center';
+      ctx.font='700 9px "JetBrains Mono", monospace';
+      ctx.fillText(zone.label.toUpperCase(),(bounds.left+bounds.right)/2,zone.yStart+14);
+    }
+    ctx.restore();
+  }
+
   // 2. Persistent Blood Decals on walls & backdrop
   for (const decal of gore.bloodDecals) {
     if (decal.y < visibleTop - 40 || decal.y > visibleBottom + 40) continue;
@@ -291,15 +326,7 @@ export function renderGame(params: RenderParams): void {
     const dirSign = level.platformSide === 'left' ? 1 : -1;
     const angle = input.aimAngle;
     const power = input.aimPower;
-    const gravityScale = Math.sqrt(Math.max(1, level.gravity) / 820);
-    const spd = (180 + power * 420) * gravityScale;
-    let simVx = Math.cos(angle) * spd;
-    let simVy = Math.min(-spd * 0.22, Math.sin(angle) * spd);
-
-    let px = origin.x;
-    let py = origin.y;
-    const dragXPerSec = Math.pow(0.986, 180);
-    const dragYPerSec = Math.pow(0.9965, 180);
+    let motion = { x: origin.x, y: origin.y, ...launchVelocity(angle,power,level.gravity) };
 
     ctx.save();
     for (let dot = 1; dot <= 14; dot++) {
@@ -308,13 +335,10 @@ export function renderGame(params: RenderParams): void {
       const sub = 9;
       const dtChunk = stepDt / sub;
       for (let s = 0; s < sub; s++) {
-        simVx *= Math.pow(dragXPerSec, dtChunk);
-        simVy = simVy * Math.pow(dragYPerSec, dtChunk) + level.gravity * dtChunk;
-        px += simVx * dtChunk;
-        py += simVy * dtChunk;
+        motion = advanceAirMotion(motion,level.gravity,ragdoll.bodyAngle,0,airAt(level,motion.y),dtChunk);
       }
       ctx.beginPath();
-      ctx.arc(px, py, Math.max(1.2, 3.2 - dot * 0.14), 0, Math.PI * 2);
+      ctx.arc(motion.x, motion.y, Math.max(1.2, 3.2 - dot * 0.14), 0, Math.PI * 2);
       ctx.fillStyle = `rgba(245, 158, 11, ${Math.max(0.18, 0.92 - dot * 0.055)})`;
       ctx.fill();
     }
