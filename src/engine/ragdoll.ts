@@ -38,6 +38,12 @@ export function createGoreWorld(): GoreWorld {
   };
 }
 
+function projectNodeX(node: VerletNode, x: number, preserveVelocity: boolean) {
+  const correction=x-node.x;
+  node.x=x;
+  if(preserveVelocity) node.oldX+=correction;
+}
+
 function dist(x1: number, y1: number, x2: number, y2: number): number {
   return Math.hypot(x2 - x1, y2 - y1);
 }
@@ -119,12 +125,12 @@ export function createRagdollOnPlatform(level: LevelConfig): Ragdoll {
   return {
     bodyAngle: 0,
     turnSpeed: 0,
-    tuckAmount: 0,
+    diveAmount: 0,
     restPose: nodes.map(n => ({ x: n.x - comX, y: n.y - comY })),
     nodes,
     bones,
     alive: true,
-    tucking: false,
+    diving: false,
     limbsLost: 0,
     fatalCause: null,
     deathTime: 0,
@@ -360,7 +366,7 @@ export function stepRagdollAndGore(
     ragdoll.deathTime += rawDt;
   }
 
-  ragdoll.tucking = ragdoll.alive && input.tuck;
+  ragdoll.diving = ragdoll.alive && input.dive;
 
   const subSteps = 3;
   const subDt = dt / subSteps;
@@ -421,6 +427,19 @@ export function stepRagdollAndGore(
       }
     }
 
+    if(ragdoll.alive) {
+      const deckContact=ragdoll.nodes.filter(n=>(n.x<level.topLeftX||n.x>level.topRightX)&&n.oldY+n.radius<=level.platformY+6);
+      const deckPenetration=Math.max(0,...deckContact.map(n=>n.y+n.radius-level.platformY));
+      if(deckPenetration>0) {
+        const mass=ragdoll.nodes.reduce((sum,n)=>sum+n.mass,0);
+        const descending=ragdoll.nodes.reduce((sum,n)=>sum+(n.y-n.oldY)*n.mass,0)/mass>0;
+        for(const n of ragdoll.nodes) {
+          n.y-=deckPenetration; n.oldY-=deckPenetration;
+          if(descending)n.oldY=n.y;
+        }
+      }
+    }
+
     if (ragdoll.alive) {
       const penetration = Math.max(0,...ragdoll.nodes.map(n=>n.y+n.radius-level.floorY));
       if(penetration>0) {
@@ -461,13 +480,10 @@ export function stepRagdollAndGore(
       // 3. Solid boundary collisions inside solver (open sky above rim, outer cliff decks, V-shaped shaft walls)
       for (const n of ragdoll.nodes) {
         if (n.x - n.radius < 0) {
-          n.x = n.radius;
+          projectNodeX(n,n.radius,ragdoll.alive);
         }
         if (n.x + n.radius > level.worldWidth) {
-          n.x = level.worldWidth - n.radius;
-        }
-        if (n.y - n.radius < -180) {
-          n.y = -180 + n.radius;
+          projectNodeX(n,level.worldWidth-n.radius,ragdoll.alive);
         }
 
         // Solid outer cliffs (0..topLeftX and topRightX..worldWidth) + sloped V-shaft walls below platformY
@@ -489,10 +505,10 @@ export function stepRagdollAndGore(
           } else if (n.y >= level.platformY) {
             // Inside the V-shaped shaft below the rim
             if (n.x - n.radius < bounds.left) {
-              n.x = bounds.left + n.radius;
+              projectNodeX(n,bounds.left+n.radius,ragdoll.alive);
             }
             if (n.x + n.radius > bounds.right) {
-              n.x = bounds.right - n.radius;
+              projectNodeX(n,bounds.right-n.radius,ragdoll.alive);
             }
           } else {
             // Grazing right at the pit corner (platformY - radius < y < platformY)
@@ -503,7 +519,7 @@ export function stepRagdollAndGore(
                 n.y = level.platformY - n.radius;
                 if (n.y - n.oldY > 0) n.oldY = n.y;
               } else {
-                n.x = level.topLeftX + n.radius;
+                projectNodeX(n,level.topLeftX+n.radius,ragdoll.alive);
               }
             } else if (n.x > level.topRightX) {
               const overlapTop = n.y + n.radius - level.platformY;
@@ -512,7 +528,7 @@ export function stepRagdollAndGore(
                 n.y = level.platformY - n.radius;
                 if (n.y - n.oldY > 0) n.oldY = n.y;
               } else {
-                n.x = level.topRightX - n.radius;
+                projectNodeX(n,level.topRightX-n.radius,ragdoll.alive);
               }
             }
           }
@@ -571,7 +587,7 @@ export function stepRagdollAndGore(
             sp.tipY,
             nx,
             -0.2,
-            `${sp.side === 'left' ? 'Left' : 'Right'} wall · ${n.id === 'head' ? 'head' : i >= 8 ? 'leg' : i >= 4 ? 'arm' : 'torso'}${ragdoll.tucking ? '' : ' · untucked'}`,
+            `${sp.side === 'left' ? 'Left' : 'Right'} wall · ${n.id === 'head' ? 'head' : i >= 8 ? 'leg' : i >= 4 ? 'arm' : 'torso'}${ragdoll.diving ? '' : ' · exposed'}`,
             level,
             gore,
             subDt
@@ -593,8 +609,8 @@ export function stepRagdollAndGore(
   // A foot grazing the floor is not a clear. The torso must arrive alive,
   // and all body nodes must remain within the landing pad during confirmation.
   if (ragdoll.alive) {
-    const core = getRagdollCenter(ragdoll);
-    const safelyDown = core.y >= level.floorY - 32 && ragdoll.nodes.every(n =>
+    const grounded = ragdoll.nodes.some(n=>n.y+n.radius>=level.floorY-.5);
+    const safelyDown = grounded && ragdoll.nodes.every(n =>
       n.x - n.radius >= level.bottomLeftX && n.x + n.radius <= level.bottomRightX
     );
     ragdoll.landTimer = safelyDown ? ragdoll.landTimer + rawDt : 0;

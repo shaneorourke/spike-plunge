@@ -84,9 +84,9 @@ export function CharacterSelectModal({ open, progress, onSelect, onResetAll, onC
           </div>
           <div className="px-2 py-3 sm:px-3 sm:pt-0 sm:pb-4 text-center">
             <div className="flex rounded-lg bg-slate-900 p-1 gap-1 mb-2 sm:mb-4" role="group" aria-label="Preview pose">
-              {(['ready', 'tucked', 'rotated'] as const).map(p => <button key={p} type="button" aria-pressed={pose === p} onClick={() => setPose(p)}
+              {(['ready', 'diving', 'rotated'] as const).map(p => <button key={p} type="button" aria-pressed={pose === p} onClick={() => setPose(p)}
                 className={`flex-1 min-h-9 rounded-md text-[11px] font-semibold transition-colors ${pose === p ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}>
-                {p === 'ready' ? 'Upright' : p === 'tucked' ? 'Tucked' : 'Sideways'}
+                {p === 'ready' ? 'Upright' : p === 'diving' ? 'Dive' : 'Sideways'}
               </button>)}
             </div>
             <h3 className="font-display text-xl sm:text-2xl font-extrabold uppercase text-white">{character.name}</h3>

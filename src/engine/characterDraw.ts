@@ -13,7 +13,7 @@ interface CharPalette {
 
 function getPalette(
   id: CharacterId,
-  tucking: boolean,
+  diving: boolean,
   alive: boolean
 ): CharPalette {
   switch (id) {
@@ -99,7 +99,7 @@ function drawEyesAndFace(
   alive: boolean,
   phase: GamePhase,
   speedKmh: number,
-  tucking: boolean
+  diving: boolean
 ): void {
   ctx.strokeStyle = '#0F172A';
   ctx.fillStyle = '#0F172A';
@@ -421,7 +421,7 @@ function drawEyesAndFace(
   }
 
   // Classic Stickman Stunt Diver
-  if (tucking) {
+  if (diving) {
     // Focused determined eyes + clenched line
     ctx.fillStyle = '#0F172A';
     ctx.beginPath();
@@ -459,7 +459,7 @@ function drawHeadExtras(
   headRadius: number,
   speedKmh: number,
   alive: boolean,
-  tuck = 0
+  dive = 0
 ): void {
   const flutter = Math.min(0.55, speedKmh * 0.0038);
 
@@ -512,18 +512,18 @@ function drawHeadExtras(
     for (const side of [-1, 1]) {
       ctx.save();
       ctx.translate(side * 4.2, -headRadius + 1.2);
-      ctx.rotate(side * (0.12 + flutter * .35 + tuck * 1.1));
+      ctx.rotate(side * (0.12 + flutter * .35 + dive * 1.1));
       ctx.fillStyle = '#F8FAFC';
       ctx.strokeStyle = '#090B0F';
       ctx.lineWidth = 1.6;
       ctx.beginPath();
-      ctx.ellipse(0, -5.5 + tuck * 2, 2.8, 6.5 - tuck * 2, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, -5.5 + dive * 2, 2.8, 6.5 - dive * 2, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
 
       ctx.fillStyle = '#F9A8D4';
       ctx.beginPath();
-      ctx.ellipse(0, -5.5 + tuck * 2, 1.3, 4.2 - tuck * 1.6, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, -5.5 + dive * 2, 1.3, 4.2 - dive * 1.6, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     }
@@ -561,7 +561,7 @@ function drawHeadExtras(
     ctx.lineWidth = 1.6;
     ctx.beginPath();
     ctx.moveTo(-3.2, -headRadius + 1);
-    ctx.lineTo(0.8, -headRadius - 5.0 + tuck * 3);
+    ctx.lineTo(0.8, -headRadius - 5.0 + dive * 3);
     ctx.lineTo(4.6, -headRadius + 2);
     ctx.closePath();
     ctx.fill();
@@ -657,20 +657,20 @@ function drawTorso(ctx: CanvasRenderingContext2D, rag: Ragdoll, id: CharacterId,
   ctx.save();
   ctx.translate((chest.x + hips.x) / 2, (chest.y + hips.y) / 2);
   ctx.rotate(Math.atan2(hips.y - chest.y, hips.x - chest.x) - Math.PI / 2);
-  const tuck = rag.tuckAmount;
+  const dive = rag.diveAmount;
   const plump = id === 'capybara' || id === 'penguin' || id === 'chicken';
-  const ry = (plump ? 12 : 10) - tuck * (plump ? 3.5 : 1.8);
+  const ry = (plump ? 12 : 10) - dive * (plump ? 3.5 : 1.8);
   const rx = id === 'capybara' ? 8.5 : id === 'penguin' ? 8 : id === 'chicken' ? 8.6 : id === 'stickman' ? 4.8 : 6.2;
 
   if (id === 'shark') {
     ctx.fillStyle = '#5C94B3'; ctx.strokeStyle = INK; ctx.lineWidth = 1.3;
-    ctx.beginPath(); ctx.moveTo(3, -5); ctx.lineTo(12 - tuck * 5, 0); ctx.lineTo(3, 5); ctx.closePath(); ctx.fill(); ctx.stroke();
-    if (tuck < .8) {
-      ctx.beginPath(); ctx.moveTo(-2,ry-3); ctx.lineTo(-5,ry+5-tuck*5);
-      ctx.lineTo(0,ry+2); ctx.lineTo(5,ry+5-tuck*5); ctx.lineTo(2,ry-3); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(3, -5); ctx.lineTo(12 - dive * 5, 0); ctx.lineTo(3, 5); ctx.closePath(); ctx.fill(); ctx.stroke();
+    if (dive < .8) {
+      ctx.beginPath(); ctx.moveTo(-2,ry-3); ctx.lineTo(-5,ry+5-dive*5);
+      ctx.lineTo(0,ry+2); ctx.lineTo(5,ry+5-dive*5); ctx.lineTo(2,ry-3); ctx.closePath(); ctx.fill(); ctx.stroke();
     }
   }
-  if (id === 'bunny') ellipse(ctx, -rx + 1, 4, 3.3 - tuck, 3.3 - tuck, '#FFFFFF');
+  if (id === 'bunny') ellipse(ctx, -rx + 1, 4, 3.3 - dive, 3.3 - dive, '#FFFFFF');
 
   if (id === 'skeleton') {
     ctx.strokeStyle = '#E8E2D5'; ctx.lineWidth = 2.3;
@@ -711,8 +711,8 @@ function drawTorso(ctx: CanvasRenderingContext2D, rag: Ragdoll, id: CharacterId,
   ctx.restore();
 }
 
-function drawHead(ctx: CanvasRenderingContext2D, id: CharacterId, p: CharPalette, r: number, alive: boolean, phase: GamePhase, speed: number, tuck: number) {
-  drawHeadExtras(ctx, id, r, speed, alive, tuck);
+function drawHead(ctx: CanvasRenderingContext2D, id: CharacterId, p: CharPalette, r: number, alive: boolean, phase: GamePhase, speed: number, dive: number) {
+  drawHeadExtras(ctx, id, r, speed, alive, dive);
   ctx.beginPath();
   if (id === 'capybara') ctx.roundRect(-r, -r * .8, r * 2, r * 1.7, 4.2);
   else if (id === 'shark') ctx.ellipse(0, .2, r * 1.07, r * .9, 0, 0, Math.PI * 2);
@@ -722,7 +722,7 @@ function drawHead(ctx: CanvasRenderingContext2D, id: CharacterId, p: CharPalette
   // A restrained rim highlight reads at the actual playfield size.
   ctx.beginPath(); ctx.arc(-.5, -.5, r - 1.5, -Math.PI * .95, -Math.PI * .35);
   ctx.strokeStyle = 'rgba(255,255,255,.38)'; ctx.lineWidth = 1; ctx.stroke();
-  drawEyesAndFace(ctx, id, alive, phase, speed, tuck > .65);
+  drawEyesAndFace(ctx, id, alive, phase, speed, dive > .65);
   if (id === 'stickman') {
     ctx.save(); ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.clip();
     ctx.fillStyle = '#FBBF24'; ctx.fillRect(-r,-5.5,r*2,2.8);
@@ -732,8 +732,8 @@ function drawHead(ctx: CanvasRenderingContext2D, id: CharacterId, p: CharPalette
 
 export function drawRagdollCharacter(ctx: CanvasRenderingContext2D, rag: Ragdoll, id: CharacterId, phase: GamePhase, speedKmh: number): void {
   ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  const p = getPalette(id, rag.tucking, rag.alive);
-  // Back limbs first, then the body and foreground limbs: tucks stay readable.
+  const p = getPalette(id, rag.diving, rag.alive);
+  // Back limbs first, then the body and foreground limbs: dives stay readable.
   ctx.save(); ctx.globalAlpha *= .78;
   drawArmOrLeg(ctx, rag, id, p, 'L', true);
   drawArmOrLeg(ctx, rag, id, p, 'L', false);
@@ -749,7 +749,7 @@ export function drawRagdollCharacter(ctx: CanvasRenderingContext2D, rag: Ragdoll
   const head = rag.nodes[0], neck = rag.nodes[1];
   ctx.save(); ctx.translate(head.x, head.y);
   ctx.rotate(Math.atan2(head.y - neck.y, head.x - neck.x) + Math.PI / 2);
-  drawHead(ctx, id, p, head.radius, rag.alive, phase, speedKmh, rag.tuckAmount);
+  drawHead(ctx, id, p, head.radius, rag.alive, phase, speedKmh, rag.diveAmount);
   ctx.restore(); ctx.restore();
 }
 
@@ -762,13 +762,13 @@ export function drawCharacterPortrait(ctx: CanvasRenderingContext2D, id: Charact
   ctx.restore();
 }
 
-export type ModelPose = 'ready' | 'tucked' | 'rotated';
+export type ModelPose = 'ready' | 'diving' | 'rotated';
 
 export function drawCharacterModelPreview(ctx: CanvasRenderingContext2D, id: CharacterId, width: number, height: number, pose: ModelPose) {
   ctx.clearRect(0, 0, width, height);
   const rag = createRagdollOnPlatform(generateLevel(1));
-  rag.tucking = pose === 'tucked';
-  rag.tuckAmount = rag.tucking ? 1 : 0;
+  rag.diving = pose === 'diving';
+  rag.diveAmount = rag.diving ? 1 : 0;
   rag.bodyAngle = pose === 'rotated' ? Math.PI / 2 : 0;
   stepControlledFlight(rag, 0, 0, 1 / 180);
   const mass = rag.nodes.reduce((sum,n) => sum+n.mass,0);
@@ -776,6 +776,6 @@ export function drawCharacterModelPreview(ctx: CanvasRenderingContext2D, id: Cha
   const cy = rag.nodes.reduce((sum,n) => sum+n.y*n.mass,0) / mass;
   const scale = Math.min(width / 90, height / 92);
   ctx.save(); ctx.translate(width / 2, height * .55); ctx.scale(scale,scale); ctx.translate(-cx,-cy);
-  drawRagdollCharacter(ctx,rag,id,rag.tucking ? 'FALLING' : 'READY',0);
+  drawRagdollCharacter(ctx,rag,id,rag.diving ? 'FALLING' : 'READY',0);
   ctx.restore();
 }

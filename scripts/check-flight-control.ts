@@ -3,7 +3,7 @@ import { nodeHitsSpike } from '../src/engine/collision';
 import { advanceAirMotion, CALM_AIR, projectedArea, sampleAir } from '../src/engine/aerodynamics';
 import { generateLevel } from '../src/engine/levelGen';
 import { createRagdollOnPlatform, launchRagdoll } from '../src/engine/ragdoll';
-import { MAX_TURN_SPEED, TUCK_SECONDS, stepControlledFlight } from '../src/engine/flightControl';
+import { MAX_TURN_SPEED, DIVE_SECONDS, stepControlledFlight } from '../src/engine/flightControl';
 
 const level = generateLevel(1);
 const make = () => {
@@ -22,18 +22,18 @@ const neutral = make(), changingShape = make();
 const vacuum = generateLevel(1);
 vacuum.windZones = [{id:'vacuum', yStart:-1e6, yEnd:1e6, velocityX:0, velocityY:0, density:0, label:'Test vacuum'}];
 for (let step = 0; step < 720; step++) {
-  changingShape.tucking = Math.floor(step / 60) % 2 === 0;
+  changingShape.diving = Math.floor(step / 60) % 2 === 0;
   stepControlledFlight(neutral, level.gravity, 0, 1 / 180, vacuum);
   stepControlledFlight(changingShape, level.gravity, 0, 1 / 180, vacuum);
-  assert.equal(changingShape.bodyAngle, 0, 'Tuck must not rotate the body');
+  assert.equal(changingShape.bodyAngle, 0, 'Dive must not rotate the body');
   assert.equal(changingShape.turnSpeed, 0, 'Neutral input must not inject spin');
   assert(Math.hypot(centre(neutral).x - centre(changingShape).x, centre(neutral).y - centre(changingShape).y) < 1e-7,
     'Changing shape must not inject momentum in zero-density air');
 }
-for (const tuck of [false, true]) {
+for (const dive of [false, true]) {
   for (const direction of [-1, 1]) {
     const rag = make();
-    rag.tucking = tuck;
+    rag.diving = dive;
     for (let step = 0; step < 180; step++) {
       stepControlledFlight(rag, level.gravity, direction, 1 / 180);
       assert(Math.abs(rag.turnSpeed) <= MAX_TURN_SPEED + 1e-10);
@@ -46,11 +46,11 @@ for (const tuck of [false, true]) {
   }
 }
 const folding = make();
-folding.tucking = true;
+folding.diving = true;
 stepControlledFlight(folding, level.gravity, 0, 1 / 180);
-assert(folding.tuckAmount > 0 && folding.tuckAmount < .03, 'Tuck must start gradually');
-for (let step = 1; step < Math.ceil(TUCK_SECONDS * 180); step++) stepControlledFlight(folding, level.gravity, 0, 1 / 180);
-assert.equal(folding.tuckAmount, 1, 'Tuck should complete within its documented transition');
+assert(folding.diveAmount > 0 && folding.diveAmount < .03, 'Dive must start gradually');
+for (let step = 1; step < Math.ceil(DIVE_SECONDS * 180); step++) stepControlledFlight(folding, level.gravity, 0, 1 / 180);
+assert.equal(folding.diveAmount, 1, 'Dive should complete within its documented transition');
 // Air acts on relative velocity: energy decays without gravity and body area
 // determines drag. It must never add uncontrolled angular motion.
 const air = {velocityX:90,velocityY:-120,density:1.4};
@@ -61,13 +61,13 @@ for(let i=0;i<720;i++) {
   const energy=(motion.vx-air.velocityX)**2+(motion.vy-air.velocityY)**2;
   assert(energy<=previousEnergy+1e-8,'Drag must dissipate air-relative energy'); previousEnergy=energy;
 }
-const drop = (angle:number,tuck:number,environment=CALM_AIR,dt=1/180) => {
+const drop = (angle:number,dive:number,environment=CALM_AIR,dt=1/180) => {
   let state={x:0,y:0,vx:0,vy:0};
-  for(let t=0;t<2-1e-8;t+=dt) state=advanceAirMotion(state,820,angle,tuck,environment,dt);
+  for(let t=0;t<2-1e-8;t+=dt) state=advanceAirMotion(state,820,angle,dive,environment,dt);
   return state;
 };
 const broad=drop(Math.PI/2,0), compact=drop(0,1), vertical=drop(0,0);
-assert(compact.y>vertical.y && vertical.y>broad.y,'Tuck should fall fastest; broadside should brake hardest');
+assert(compact.y>vertical.y && vertical.y>broad.y,'Dive should fall fastest; broadside should brake hardest');
 assert(drop(0,1,air).x>20,'Crosswind must carry the body');
 assert(drop(0,1,air).y<compact.y,'Updraft must slow descent');
 assert(drop(0,1,{velocityX:0,velocityY:180,density:1}).y>compact.y,'Downburst must speed descent');
@@ -81,9 +81,16 @@ assert.equal(sampleAir([zone],200).velocityX,90);
 const inWind=make();
 for(let i=0;i<180;i++) stepControlledFlight(inWind,820,0,1/180,{...level,windZones:[{...zone,yStart:-1e6,yEnd:1e6}]});
 assert.equal(inWind.bodyAngle,0,'Crosswind must not reintroduce automatic spin');
-console.log('PASS: stable controls, smooth tuck, dissipative relative-air drag, pose-dependent braking, wind/updraft/downburst/density effects and timestep convergence.');
+console.log('PASS: stable controls, smooth dive, dissipative relative-air drag, pose-dependent braking, wind/updraft/downburst/density effects and timestep convergence.');
 
 const spike={id:'test',baseX1:0,baseY1:0,baseX2:0,baseY2:20,tipX:10,tipY:10,side:'left' as const,stained:0};
 assert(nodeHitsSpike({x:20,y:10,radius:2},spike,{x:-5,y:10}),'Fast movement across a spike must not tunnel through it');
 assert(!nodeHitsSpike({x:20,y:30,radius:2},spike,{x:-5,y:30}),'A clear swept path must remain safe');
 console.log('PASS: swept spike collision and clear-path regression.');
+
+const open=make(),diver=make();diver.diving=true;diver.diveAmount=1;
+stepControlledFlight(open,0,0,1/180);stepControlledFlight(diver,0,0,1/180);
+const span=(rag:typeof diver,axis:'x'|'y')=>Math.max(...rag.nodes.map(n=>n[axis]+n.radius))-Math.min(...rag.nodes.map(n=>n[axis]-n.radius));
+assert(span(diver,'x')<span(open,'x')-6,'Dive must narrow the body');
+assert(span(diver,'y')>span(open,'y')+5,'Dive must extend the body, not curl it into a ball');
+console.log('PASS: extended, narrow dive silhouette.');

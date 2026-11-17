@@ -2,32 +2,34 @@ import { BODY_NODES } from './body';
 import { advanceAirMotion, airAt } from './aerodynamics';
 import type { LevelConfig, Ragdoll } from '../types/game';
 
-export const MAX_TURN_SPEED = Math.PI / 3; // 60 degrees/sec, independent of tuck.
-export const TUCK_SECONDS = .28;
-const FOLDED = [
-  [0, -17], [0, -8], [0, -2], [0, 8],
-  [-9, -5], [-6, 3], [9, -5], [6, 3],
-  [-9, 15], [-6, 8], [9, 15], [6, 8],
+export const MAX_TURN_SPEED = Math.PI / 3; // 60 degrees/sec, independent of dive.
+export const DIVE_SECONDS = .28;
+// Hands lead the head, arms extend, and the legs come together. The player
+// chooses the dive's direction with rotation; entering it never adds a flip.
+const DIVE_POSE = [
+  [0, -25], [0, -15], [0, -5], [0, 8],
+  [-4, -27], [-2, -36], [4, -27], [2, -36],
+  [-2, 20], [-2, 31], [2, 20], [2, 31],
 ];
 
 const BODY_MASS = BODY_NODES.reduce((sum,n) => sum+n.mass,0);
-const FOLD_X = BODY_NODES.reduce((sum,n,i) => sum+FOLDED[i][0]*n.mass,0)/BODY_MASS;
-const FOLD_Y = BODY_NODES.reduce((sum,n,i) => sum+FOLDED[i][1]*n.mass,0)/BODY_MASS;
-export function poseOffset(rest: {x:number;y:number}, index: number, angle: number, tuck: number) {
-  const blend = tuck*tuck*(3-2*tuck);
-  const x = rest.x*(1-blend)+(FOLDED[index][0]-FOLD_X)*blend;
-  const y = rest.y*(1-blend)+(FOLDED[index][1]-FOLD_Y)*blend;
+const DIVE_X = BODY_NODES.reduce((sum,n,i) => sum+DIVE_POSE[i][0]*n.mass,0)/BODY_MASS;
+const DIVE_Y = BODY_NODES.reduce((sum,n,i) => sum+DIVE_POSE[i][1]*n.mass,0)/BODY_MASS;
+export function poseOffset(rest: {x:number;y:number}, index: number, angle: number, dive: number) {
+  const blend = dive*dive*(3-2*dive);
+  const x = rest.x*(1-blend)+(DIVE_POSE[index][0]-DIVE_X)*blend;
+  const y = rest.y*(1-blend)+(DIVE_POSE[index][1]-DIVE_Y)*blend;
   return {x:x*Math.cos(angle)-y*Math.sin(angle),y:x*Math.sin(angle)+y*Math.cos(angle)};
 }
 
-export interface FlightPose { bodyAngle: number; turnSpeed: number; tuckAmount: number }
-export function advanceFlightPose(rag: FlightPose, tucking: boolean, turn: number, dt: number) {
+export interface FlightPose { bodyAngle: number; turnSpeed: number; diveAmount: number }
+export function advanceFlightPose(rag: FlightPose, diving: boolean, turn: number, dt: number) {
   const targetSpeed = Math.max(-1, Math.min(1, turn)) * MAX_TURN_SPEED;
   rag.turnSpeed += Math.max(-4 * dt, Math.min(4 * dt, targetSpeed - rag.turnSpeed));
   if (turn === 0) rag.turnSpeed = 0;
   rag.bodyAngle += rag.turnSpeed * dt;
-  const targetTuck = tucking ? 1 : 0;
-  rag.tuckAmount += Math.max(-dt / TUCK_SECONDS, Math.min(dt / TUCK_SECONDS, targetTuck - rag.tuckAmount));
+  const targetDive = diving ? 1 : 0;
+  rag.diveAmount += Math.max(-dt / DIVE_SECONDS, Math.min(dt / DIVE_SECONDS, targetDive - rag.diveAmount));
 }
 
 // Shape changes do not inject momentum; aerodynamic forces act at the mass
@@ -40,13 +42,13 @@ export function stepControlledFlight(rag: Ragdoll, gravity: number, turn: number
     dx += (n.x - n.oldX) * n.mass; dy += (n.y - n.oldY) * n.mass;
   });
   x /= mass; y /= mass;
-  advanceFlightPose(rag, rag.tucking, turn, dt);
+  advanceFlightPose(rag, rag.diving, turn, dt);
   const motion = advanceAirMotion({ x, y, vx: dx / mass / dt, vy: dy / mass / dt },
-    gravity, rag.bodyAngle, rag.tuckAmount, airAt(level, y), dt);
+    gravity, rag.bodyAngle, rag.diveAmount, airAt(level, y), dt);
   dx = motion.x - x; dy = motion.y - y;
 
   rag.nodes.forEach((n, i) => {
-    const {x:rx,y:ry} = poseOffset(rag.restPose[i],i,rag.bodyAngle,rag.tuckAmount);
+    const {x:rx,y:ry} = poseOffset(rag.restPose[i],i,rag.bodyAngle,rag.diveAmount);
     n.x = x + dx + rx; n.y = y + dy + ry;
     n.oldX = n.x - dx + rag.turnSpeed * ry * dt;
     n.oldY = n.y - dy - rag.turnSpeed * rx * dt;

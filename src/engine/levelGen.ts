@@ -1,15 +1,16 @@
 import type { FlightPlan, LevelConfig, ShaftPoint, Spike, WindZone } from '../types/game';
+import { MAX_POWER } from './aim';
 import { advanceAirMotion, launchVelocity, sampleAir, type FlightMotion } from './aerodynamics';
 import { BODY_NODES, launchOrigin } from './body';
 import { advanceFlightPose, poseOffset } from './flightControl';
 import { referenceInput } from './routePlan';
 
 const FAMILIES = [
-  { name: 'First Principles', tip: 'Tuck is streamlined. Opening your body adds drag; turning broadside adds more.' },
-  { name: 'Crosswind', tip: 'Air carries you sideways. Tuck to cut through it; open your body to catch more of it.' },
-  { name: 'Airbrake Chamber', tip: 'Open and turn across the airflow in the wide chamber. Fold back in before the next pinch.' },
+  { name: 'First Principles', tip: 'Dive is streamlined. Opening your body adds drag; turning broadside adds more.' },
+  { name: 'Crosswind', tip: 'Air carries you sideways. Dive to cut through it; open your body to catch more of it.' },
+  { name: 'Airbrake Chamber', tip: 'Open and turn across the airflow in the wide chamber. Extend into a narrow dive before the next pinch.' },
   { name: 'Updraft Well', tip: 'The rising air slows your descent. Use that extra time to control your angle and drift.' },
-  { name: 'Downburst', tip: 'Descending air shortens your reaction time. Plan the tuck before entering the fast layer.' },
+  { name: 'Downburst', tip: 'Descending air shortens your reaction time. Plan the dive before entering the fast layer.' },
   { name: 'Dense Air', tip: 'The amber layer increases drag. A compact body keeps more momentum through it.' },
   { name: 'Wind Reversal', tip: 'Two opposing air streams. Catch one, shed the other; the order matters.' },
   { name: 'Dogleg', tip: 'The shaft bends with the airflow. Think about where your momentum will carry you after the wind ends.' },
@@ -38,19 +39,19 @@ export function boundsOnProfile(points: readonly ShaftPoint[], y: number) {
 }
 export function getShaftBoundsAtY(level: LevelConfig, y: number) { return boundsOnProfile(level.profile, y); }
 
-interface RoutePoint extends FlightMotion { bodyAngle:number; tuckAmount:number }
+interface RoutePoint extends FlightMotion { bodyAngle:number; diveAmount:number }
 
 function traceRoute(plan: FlightPlan, zones: WindZone[], origin: { x: number; y: number }, height: number, platformY: number, side: 'left' | 'right') {
   const angle = side === 'left' ? -plan.elevation * Math.PI / 180 : -Math.PI + plan.elevation * Math.PI / 180;
   let motion: FlightMotion = { ...origin, ...launchVelocity(angle, plan.power) };
-  const pose = { bodyAngle: 0, turnSpeed: 0, tuckAmount: 0 };
+  const pose = { bodyAngle: 0, turnSpeed: 0, diveAmount: 0 };
   const points: RoutePoint[] = [];
   for (let frame = 0; frame < 900 && motion.y < platformY + height; frame++) {
     const input = referenceInput(plan, (motion.y - platformY) / height, pose.bodyAngle);
     for (let sub = 0; sub < 3; sub++) {
-      advanceFlightPose(pose, input.tuck, input.rotate, 1 / 180);
-      motion = advanceAirMotion(motion, 820, pose.bodyAngle, pose.tuckAmount, sampleAir(zones, motion.y), 1 / 180);
-      if (motion.vy > 0 && motion.y >= platformY) points.push({...motion, bodyAngle:pose.bodyAngle, tuckAmount:pose.tuckAmount});
+      advanceFlightPose(pose, input.dive, input.rotate, 1 / 180);
+      motion = advanceAirMotion(motion, 820, pose.bodyAngle, pose.diveAmount, sampleAir(zones, motion.y), 1 / 180);
+      if (motion.vy > 0 && motion.y >= platformY) points.push({...motion, bodyAngle:pose.bodyAngle, diveAmount:pose.diveAmount});
     }
   }
   return points;
@@ -123,17 +124,17 @@ function buildLevel(level: number): LevelConfig {
   }
   const reference: FlightPlan = { elevation: 32 + rand() * 15, power: .6, segments: [] };
   if (familyIndex >= 2 && familyIndex !== 4) {
-    reference.segments.push({ from: .14 + rand() * .025, to: .54 + rand() * .025, tuck: false, angle: direction * (50 + rand() * 15) * Math.PI / 180 });
+    reference.segments.push({ from: .14 + rand() * .025, to: .54 + rand() * .025, dive: false, angle: direction * (50 + rand() * 15) * Math.PI / 180 });
   }
-  if (familyIndex === 6 || familyIndex === 11) reference.segments.push({ from: .59, to: .72, tuck: false, angle: -direction * Math.PI / 8 });
+  if (familyIndex === 6 || familyIndex === 11) reference.segments.push({ from: .59, to: .72, dive: false, angle: -direction * Math.PI / 8 });
   const origin = launchOrigin(topLeftX, topRightX, platformY, platformSide);
   const targetX = 210 + (rand() - .5) * 38;
-  let low = .22, high = .96;
+  let low = .18, high = MAX_POWER;
   let trace: RoutePoint[] = [];
   // Solve launch reach before shaping the corridor. This is deterministic
   // construction, not a runtime search over collisions or a player auto-solver.
   for(let attempt=0;attempt<10;attempt++) {
-    low=.22; high=.96;
+    low=.18; high=MAX_POWER;
     for (let i = 0; i < 11; i++) {
       reference.power = (low + high) / 2;
       trace = traceRoute(reference, zones, origin, shaftHeight, platformY, platformSide);
@@ -180,7 +181,7 @@ function buildLevel(level: number): LevelConfig {
   const spikeDepth=12+challenge*2;
   for(let pass=0;pass<3;pass++) for(const sample of trace) for(let n=0;n<BODY_NODES.length;n++) {
     const node=BODY_NODES[n];
-    const offset=poseOffset({x:direction*(node.x-restX),y:node.y-restY},n,sample.bodyAngle,sample.tuckAmount);
+    const offset=poseOffset({x:direction*(node.x-restX),y:node.y-restY},n,sample.bodyAngle,sample.diveAmount);
     const x=sample.x+offset.x,y=sample.y+offset.y;
     if(y<=platformY||y>=floorY-28) continue;
     const index=profile.findIndex((p,i)=>i>0&&p.y>=y);

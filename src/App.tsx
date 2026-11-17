@@ -13,7 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import { CharacterSelectModal } from './components/CharacterSelectModal';
-import { DEFAULT_AIM, type AimSettings } from './engine/aim';
+import { MIN_ELEVATION, MAX_ELEVATION, MIN_POWER, MAX_POWER, DEFAULT_AIM, type AimSettings } from './engine/aim';
 import { LevelScout } from './components/LevelScout';
 import { GameCanvas } from './components/GameCanvas';
 import { LeaderboardView } from './components/LeaderboardView';
@@ -95,15 +95,15 @@ export default function App() {
     maxSpeedKmh: 0,
     totalMetersRun: 0,
     limbsLost: 0,
-    tucking: false,
+    diving: false,
     windForce: 0,
     fatalCause: null,
   });
 
-  // Shared ref for bottom thumb-zone tuck button
+  // Shared ref for bottom thumb-zone dive button
   const rotateRef = useRef(0);
-  const tuckRef = useRef<boolean>(false);
-  const [tuckActive, setTuckActive] = useState<boolean>(false);
+  const diveRef = useRef<boolean>(false);
+  const [diveActive, setDiveActive] = useState<boolean>(false);
   const triggerDiveRef = useRef<(() => void) | null>(null);
 
   const levelMeta = useMemo(() => generateLevel(levelNumber), [levelNumber]);
@@ -113,22 +113,22 @@ export default function App() {
     [progress.selectedCharacter]
   );
 
-  const setTuckFlag = (val: boolean) => {
-    tuckRef.current = val;
-    setTuckActive(val);
+  const setDiveFlag = (val: boolean) => {
+    diveRef.current = val;
+    setDiveActive(val);
   };
 
   const resetThumbFlags = () => {
     rotateRef.current = 0;
-    tuckRef.current = false;
-    setTuckActive(false);
+    diveRef.current = false;
+    setDiveActive(false);
   };
 
   useEffect(() => {
     const release = () => {
       rotateRef.current = 0;
-      tuckRef.current = false;
-      setTuckActive(false);
+      diveRef.current = false;
+      setDiveActive(false);
     };
     window.addEventListener('blur', release);
     return () => window.removeEventListener('blur', release);
@@ -403,7 +403,7 @@ export default function App() {
               runNonce={runNonce}
               levelsCleared={progress.totalJumpsCleared}
               totalMetersRun={totalMetersRun}
-              externalTuckRef={tuckRef}
+              externalDiveRef={diveRef}
               externalRotateRef={rotateRef}
               triggerDiveRef={triggerDiveRef}
               onPhaseChange={setPhase}
@@ -437,15 +437,15 @@ export default function App() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <label className="text-xs text-slate-300">Elevation <strong className="float-right text-amber-400 font-mono">{aim.elevation.toFixed(2)}°</strong>
-                    <input aria-label="Launch elevation" type="range" min="13" max="85" step="0.25" value={aim.elevation}
+                    <input aria-label="Launch elevation" type="range" min={MIN_ELEVATION} max={MAX_ELEVATION} step="0.25" value={aim.elevation}
                       onChange={e => aimControlRef.current?.({...aim, elevation: Number(e.target.value)})} className="w-full mt-2 accent-amber-400" />
                   </label>
                   <label className="text-xs text-slate-300">Power <strong className="float-right text-amber-400 font-mono">{(aim.power * 100).toFixed(1)}%</strong>
-                    <input aria-label="Launch power" type="range" min="15" max="100" step="0.5" value={aim.power * 100}
+                    <input aria-label="Launch power" type="range" min={MIN_POWER*100} max={MAX_POWER*100} step="0.5" value={aim.power * 100}
                       onChange={e => aimControlRef.current?.({...aim, power: Number(e.target.value) / 100})} className="w-full mt-2 accent-amber-400" />
                   </label>
                 </div>
-                <p className="text-[10px] text-slate-500 mt-2">Preview: open body · Tuck and rotation change your flight</p>
+                <p className="text-[10px] text-slate-500 mt-2">Preview: open body · Dive and rotation change your flight</p>
               </div>}
             </>}
 
@@ -454,7 +454,7 @@ export default function App() {
                 {telemetry.airLabel ?? 'Still air'} {Math.abs(telemetry.windForce) > 5 ? `${telemetry.windForce > 0 ? '→' : '←'} ${Math.abs(telemetry.windForce/10).toFixed(1)}m/s` : ''}
                 {Math.abs(telemetry.verticalWind ?? 0) > 5 ? ` ${(telemetry.verticalWind ?? 0) > 0 ? '↓' : '↑'} ${Math.abs((telemetry.verticalWind ?? 0)/10).toFixed(1)}m/s` : ''}
               </span>
-              <span className="rounded-md bg-[#0b1420]/90 text-amber-300 px-2 py-1.5">{(telemetry.dragArea ?? .4) < .5 ? 'STREAMLINED' : (telemetry.dragArea ?? .4) > .95 ? 'AIRBRAKING' : 'OPEN'}</span>
+              <span className="rounded-md bg-[#0b1420]/90 text-amber-300 px-2 py-1.5">{telemetry.diving ? 'DIVING' : (telemetry.dragArea ?? .4) < .5 ? 'STREAMLINED' : (telemetry.dragArea ?? .4) > .95 ? 'AIRBRAKING' : 'OPEN'}</span>
             </div>}
 
             {/* TITLE OVERLAY */}
@@ -469,7 +469,7 @@ export default function App() {
                   </h1>
                   <p className="text-sm text-slate-300 leading-relaxed mb-5">
                     Aim into the shaft, then use your body as an airbrake.
-                    Tuck to cut through wind; open and turn broadside to slow
+                    Extend into a dive to cut through wind; open and turn broadside to slow
                     down or catch a current. Every stage has a distinct route
                     and airflow.
                   </p>
@@ -678,10 +678,10 @@ export default function App() {
                   </p>
 
                   <p className="text-xs text-slate-300 mb-3 leading-relaxed">
-                    {lastSummary?.cause.includes('untucked')
-                      ? 'An exposed limb caught the spikes. Fold before the constriction; open in the wider air chambers.'
+                    {lastSummary?.cause.includes('exposed')
+                      ? 'An exposed limb caught the spikes. Enter your dive before the constriction; open in the wider air chambers.'
                       : lastSummary?.cause.includes(levelMeta.platformSide === 'left' ? 'Left' : 'Right')
-                      ? 'Try more reach or catch the air stream for longer. Tuck and body angle now change your trajectory.'
+                      ? 'Try more reach or catch the air stream for longer. Dive and body angle now change your trajectory.'
                       : 'Try less reach or catch less of the air stream. Compare your pose changes with the shaft survey.'}
                   </p>
                   <p className="text-[10px] font-mono text-cyan-400 mb-3">Aim remembered · R to retry instantly</p>
@@ -764,10 +764,10 @@ export default function App() {
                   <RotateCcw className="w-6 h-6" />
                 </button>
                 <button type="button"
-                  onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); setTuckFlag(true); }}
-                  onPointerUp={() => setTuckFlag(false)} onPointerCancel={() => setTuckFlag(false)}
-                  className={`flex-1 h-full min-h-[48px] rounded-lg font-display text-xl font-extrabold uppercase select-none ${tuckActive || telemetry.tucking ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 border border-amber-500/40 text-amber-400'}`}>
-                  <ArrowDownToLine className="w-4 h-4 inline mr-1" /> Hold to tuck
+                  onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); setDiveFlag(true); }}
+                  onPointerUp={() => setDiveFlag(false)} onPointerCancel={() => setDiveFlag(false)}
+                  className={`flex-1 h-full min-h-[48px] rounded-lg font-display text-xl font-extrabold uppercase select-none ${diveActive || telemetry.diving ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 border border-amber-500/40 text-amber-400'}`}>
+                  <ArrowDownToLine className="w-4 h-4 inline mr-1" /> Hold to dive
                 </button>
                 <button type="button" aria-label="Rotate clockwise" title="Rotate right · D / Right arrow"
                   onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); rotateRef.current = 1; }}
@@ -807,7 +807,7 @@ export default function App() {
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
                   ↑↓ elevation · ←→ power · Shift for fine aim · Space to launch.
-                  In flight: A/D or ←→ rotate; release to hold the angle. Space/S tucks. R retries.
+                  In flight: A/D or ←→ rotate; release to hold the angle. Space/S dives. R retries.
                 </p>
               </div>
               <button

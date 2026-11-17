@@ -36,7 +36,7 @@ export interface Ragdoll {
   nodes: VerletNode[];
   bones: StickBone[];
   alive: boolean;
-  tucking: boolean;
+  diving: boolean;
   limbsLost: number;
   fatalCause: string | null;
   deathTime: number;
@@ -47,7 +47,7 @@ export interface Ragdoll {
   impactDepth?: number;
   bodyAngle: number;
   turnSpeed: number;
-  tuckAmount: number;
+  diveAmount: number;
   restPose: { x: number; y: number }[];
 }
 
@@ -119,7 +119,7 @@ export interface ShaftPoint {
 export interface FlightPlan {
   elevation: number;
   power: number;
-  segments: { from: number; to: number; tuck: boolean; angle: number }[];
+  segments: { from: number; to: number; dive: boolean; angle: number }[];
 }
 
 export interface LevelConfig {
@@ -195,7 +195,7 @@ export interface DustParticle {
 
 export interface InputState {
   rotate?: number;
-  tuck: boolean;
+  dive: boolean;
   aimActive: boolean;
   aimAngle: number;
   aimPower: number;
@@ -211,7 +211,7 @@ export interface RunTelemetry {
   maxSpeedKmh: number;
   totalMetersRun: number;
   limbsLost: number;
-  tucking: boolean;
+  diving: boolean;
   windForce: number;
   verticalWind?: number;
   airLabel?: string;

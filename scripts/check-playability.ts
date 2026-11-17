@@ -5,7 +5,7 @@ import { createGoreWorld, createRagdollOnPlatform, getRagdollCenter, launchRagdo
 import { referenceInput } from '../src/engine/routePlan';
 
 (globalThis as any).window = {};
-type Variation = { elevation?: number; power?: number; timing?: number; heading?: number; constantTuck?: boolean; defaultAim?: boolean };
+type Variation = { elevation?: number; power?: number; timing?: number; heading?: number; constantDive?: boolean; defaultAim?: boolean };
 let simulations = 0;
 function dive(stage: number, variation: Variation = {}) {
   simulations++;
@@ -21,7 +21,7 @@ function dive(stage: number, variation: Variation = {}) {
       const error = segment.angle + variation.heading - rag.bodyAngle;
       input.rotate = Math.abs(error)<.035 ? 0 : Math.sign(error);
     }
-    if(variation.constantTuck !== undefined) input = {tuck:variation.constantTuck,rotate:0};
+    if(variation.constantDive !== undefined) input = {dive:variation.constantDive,rotate:0};
     stepRagdollAndGore(rag,level,{...input,aimActive:false,aimAngle:0,aimPower:1},gore,1/60,frame/60);
     assert(rag.nodes.every(n=>Number.isFinite(n.x)&&Number.isFinite(n.y)),`Non-finite simulation on ${stage}`);
   }
@@ -39,7 +39,7 @@ for(const [stageIndex,stage] of stages.entries()) {
   assert(!signatures.has(signature),`Repeated geometry/airflow at ${stage}`); signatures.add(signature);
   const base=dive(stage);
   assert(base.clear,`Reference route failed stage ${stage}: ${base.cause}`);
-  for(const tuck of [false,true]) assert(!dive(stage,{defaultAim:true,constantTuck:tuck}).clear,`Default aim auto-cleared ${stage}`);
+  for(const held of [false,true]) assert(!dive(stage,{defaultAim:true,constantDive:held}).clear,`Default aim auto-cleared ${stage}`);
   // A useful neighbourhood around the witness, including stance timing and angle.
   if(stage<=128 || stage>=1000) {
     for(const angle of [-.5,0,.5]) for(const power of [-.005,0,.005]) {
@@ -50,11 +50,12 @@ for(const [stageIndex,stage] of stages.entries()) {
   }
   if(level.reference.segments.length) {
     complex++;
-    if(!dive(stage,{constantTuck:true}).clear) posePuzzles++;
+    if(!dive(stage,{constantDive:true}).clear) posePuzzles++;
   }
   if((stageIndex+1)%32===0) console.log(`Validated ${stageIndex+1} stages (latest ${stage}); ${simulations} full physics runs`);
 }
-assert(posePuzzles>complex*.4,'Pose/airflow changes must matter on a substantial fraction of complex courses');
+// A long dive intentionally admits more launch options than the old curled pose.
+assert(posePuzzles>complex*.25,'Pose/airflow changes must still matter across the course set');
 const clean=generateLevel(19), edited=generateLevel(19);
 edited.wallSpikes[0].stained=1; edited.windZones[0].velocityX=999; edited.profile[1].left=0;
 assert.deepEqual(generateLevel(19),clean,'Retry cache must not retain world mutations');
@@ -66,10 +67,10 @@ for(const n of landing.nodes) {
   n.x+=210-start.x; n.y+=pad.floorY-90-start.y;
   n.oldX=n.x; n.oldY=n.y-700/180;
 }
-landing.previousSubDt=1/180; landing.tuckAmount=1;
+landing.previousSubDt=1/180; landing.diveAmount=1;
 let firstContactY:number|undefined;
 for(let f=0;f<60&&landing.landTimer<.15;f++) {
-  stepRagdollAndGore(landing,pad,{tuck:true,aimActive:false,aimAngle:0,aimPower:.5},landingGore,1/60,f/60);
+  stepRagdollAndGore(landing,pad,{dive:true,aimActive:false,aimAngle:0,aimPower:.5},landingGore,1/60,f/60);
   const y=getRagdollCenter(landing).y;
   if(landing.floorBounceCount>0) {
     firstContactY??=y;

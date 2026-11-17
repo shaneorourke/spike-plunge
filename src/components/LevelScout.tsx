@@ -35,6 +35,6 @@ export function LevelScout({ level }: { level: LevelConfig }) {
     </svg>
     <p className="text-sm text-slate-300 leading-relaxed">{level.briefing}</p>
     <p className="text-[10px] text-cyan-300">{level.windZones.map(z => z.label).join(' / ') || 'Still air · learn to use drag before the currents arrive'}</p>
-    <p className="font-mono text-[10px] text-slate-500">Tuck cuts drag. Open broadside to brake and catch more wind. Air stays identical on every retry.</p>
+    <p className="font-mono text-[10px] text-slate-500">Dive cuts drag. Open broadside to brake and catch more wind. Air stays identical on every retry.</p>
   </div>;
 }

@@ -33,7 +33,7 @@ interface GameCanvasProps {
   runNonce?: number;
   levelsCleared: number;
   totalMetersRun: number;
-  externalTuckRef: React.MutableRefObject<boolean>;
+  externalDiveRef: React.MutableRefObject<boolean>;
   externalRotateRef: React.MutableRefObject<number>;
   triggerDiveRef: React.MutableRefObject<(() => void) | null>;
   onPhaseChange: (next: GamePhase) => void;
@@ -57,7 +57,7 @@ export function GameCanvas({
   runNonce = 0,
   levelsCleared,
   totalMetersRun,
-  externalTuckRef,
+  externalDiveRef,
   externalRotateRef,
   triggerDiveRef,
   onPhaseChange,
@@ -89,13 +89,13 @@ export function GameCanvas({
     cameraY: number;
     elapsed: number;
     pointerInput: {
-      tuckPointers: Set<number>;
+      divePointers: Set<number>;
       aimPointerId: number | null;
       aimStartX: number;
       aimStartY: number;
     };
     keyInput: {
-      tuck: boolean;
+      dive: boolean;
       rotateLeft: boolean;
       rotateRight: boolean;
     };
@@ -123,7 +123,7 @@ export function GameCanvas({
       cameraY: lvl.platformY - 235,
       elapsed: 0,
       pointerInput: {
-        tuckPointers: new Set(),
+        divePointers: new Set(),
         aimPointerId: null,
         aimStartX: 0,
         aimStartY: 0,
@@ -131,10 +131,10 @@ export function GameCanvas({
       keyInput: {
         rotateLeft: false,
         rotateRight: false,
-        tuck: false,
+        dive: false,
       },
       input: {
-        tuck: false,
+        dive: false,
         aimActive: false,
         aimAngle: launchAngle(lvl, aim.elevation),
         aimPower: aim.power,
@@ -156,7 +156,7 @@ export function GameCanvas({
       maxSpeedKmh: 0,
       totalMetersRun,
       limbsLost: 0,
-      tucking: false,
+      diving: false,
       windForce: 0,
       fatalCause: null,
     });
@@ -201,7 +201,7 @@ export function GameCanvas({
     };
   }, [onPhaseChange, triggerDiveRef]);
 
-  // Keyboard controls (Space to jump, Space/S/Down to tuck mid-air)
+  // Keyboard controls (Space to jump, Space/S/Down to dive mid-air)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLTextAreaElement ||
@@ -231,15 +231,15 @@ export function GameCanvas({
       }
       if (e.code === 'ArrowDown' || e.code === 'KeyS') {
         e.preventDefault();
-        sim.keyInput.tuck = true;
+        sim.keyInput.dive = true;
       } else if (e.code === 'Space') {
         e.preventDefault();
         if (e.repeat) return;
         if (phaseRef.current === 'READY') {
           triggerDiveRef.current?.();
-          sim.keyInput.tuck = true;
+          sim.keyInput.dive = true;
         } else if (phaseRef.current === 'FALLING') {
-          sim.keyInput.tuck = true;
+          sim.keyInput.dive = true;
         }
       }
     };
@@ -250,21 +250,21 @@ export function GameCanvas({
       if (e.code === 'ArrowLeft' || e.code === 'KeyA') sim.keyInput.rotateLeft = false;
       if (e.code === 'ArrowRight' || e.code === 'KeyD') sim.keyInput.rotateRight = false;
       if (e.code === 'ArrowDown' || e.code === 'KeyS' || e.code === 'Space') {
-        sim.keyInput.tuck = false;
+        sim.keyInput.dive = false;
       }
     };
 
     const releaseControls = () => {
       const sim = simRef.current;
       if (!sim) return;
-      sim.keyInput.tuck = false;
+      sim.keyInput.dive = false;
       sim.keyInput.rotateLeft = false;
       sim.keyInput.rotateRight = false;
       externalRotateRef.current = 0;
-      sim.pointerInput.tuckPointers.clear();
+      sim.pointerInput.divePointers.clear();
       sim.pointerInput.aimPointerId = null;
       sim.input.aimActive = false;
-      externalTuckRef.current = false;
+      externalDiveRef.current = false;
     };
     window.addEventListener('blur', releaseControls);
     window.addEventListener('keydown', onKeyDown);
@@ -306,11 +306,11 @@ export function GameCanvas({
         const cssWidth = canvas.width / dpr;
         const cssHeight = canvas.height / dpr;
 
-        // Merge keyboard + canvas touch + external tuck button
-        sim.input.tuck =
-          sim.keyInput.tuck ||
-          sim.pointerInput.tuckPointers.size > 0 ||
-          externalTuckRef.current;
+        // Merge keyboard + canvas touch + external dive button
+        sim.input.dive =
+          sim.keyInput.dive ||
+          sim.pointerInput.divePointers.size > 0 ||
+          externalDiveRef.current;
 
         const keyboardTurn = Number(sim.keyInput.rotateRight) - Number(sim.keyInput.rotateLeft);
         sim.input.rotate = keyboardTurn || externalRotateRef.current;
@@ -414,7 +414,7 @@ export function GameCanvas({
           sim.level.platformY - 235,
           sim.level.floorY - viewWorldHeight + 76
         );
-        const clampedTarget = Math.max(sim.level.platformY - 280, Math.min(maxCamY, targetCamY));
+        const clampedTarget = Math.max(sim.level.platformY - 600, Math.min(maxCamY, targetCamY));
         sim.cameraY += (clampedTarget - sim.cameraY) * Math.min(1, rawDt * 8.5);
 
         // Render frame
@@ -468,7 +468,7 @@ export function GameCanvas({
           onTelemetry({
             verticalWind: air.velocityY,
             airLabel: activeZones.map(z=>z.label).join(' + ') || 'Still air',
-            dragArea: projectedArea(sim.ragdoll.bodyAngle,sim.ragdoll.tuckAmount,vx-air.velocityX,vy-air.velocityY),
+            dragArea: projectedArea(sim.ragdoll.bodyAngle,sim.ragdoll.diveAmount,vx-air.velocityX,vy-air.velocityY),
             level: levelNumberRef.current,
             levelsCleared: levelsClearedRef.current,
             currentDepthMeters,
@@ -478,7 +478,7 @@ export function GameCanvas({
             maxSpeedKmh: Math.round(sim.ragdoll.maxSpeed),
             totalMetersRun: totalMetersRunRef.current,
             limbsLost: sim.ragdoll.limbsLost,
-            tucking: sim.ragdoll.tucking,
+            diving: sim.ragdoll.diving,
             windForce: Math.round(air.velocityX),
             fatalCause: sim.ragdoll.fatalCause,
           });
@@ -494,9 +494,9 @@ export function GameCanvas({
       ro.disconnect();
       soundEngine.updateWind(0, false);
     };
-  }, [externalTuckRef, externalRotateRef, onLevelComplete, onPhaseChange, onRunFailed, onTelemetry]);
+  }, [externalDiveRef, externalRotateRef, onLevelComplete, onPhaseChange, onRunFailed, onTelemetry]);
 
-  // Pointer handlers on canvas for slingshot aiming (READY) and hold-to-tuck (FALLING)
+  // Pointer handlers on canvas for slingshot aiming (READY) and hold-to-dive (FALLING)
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     soundEngine.unlock();
     const sim = simRef.current;
@@ -517,7 +517,7 @@ export function GameCanvas({
     }
 
     if (phaseRef.current === 'FALLING') {
-      sim.pointerInput.tuckPointers.add(e.pointerId);
+      sim.pointerInput.divePointers.add(e.pointerId);
     }
   };
 
@@ -564,7 +564,7 @@ export function GameCanvas({
       return;
     }
 
-    sim.pointerInput.tuckPointers.delete(e.pointerId);
+    sim.pointerInput.divePointers.delete(e.pointerId);
   };
 
   return (
@@ -574,7 +574,7 @@ export function GameCanvas({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUpOrCancel}
       onPointerCancel={handlePointerUpOrCancel}
-      aria-label="Spike Plunge playfield. Drag to aim, release to jump. Hold to tuck in flight."
+      aria-label="Spike Plunge playfield. Drag to aim, release to jump. Hold to dive in flight."
       className="w-full h-full block touch-game-surface cursor-crosshair"
     />
   );

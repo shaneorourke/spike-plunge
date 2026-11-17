@@ -10,7 +10,8 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test:playability": "tsx scripts/check-playability.ts",
-    "test:flight": "tsx scripts/check-flight-control.ts"
+    "test:flight": "tsx scripts/check-flight-control.ts",
+    "test:level15": "tsx scripts/check-level15.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
