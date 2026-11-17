@@ -43,6 +43,7 @@ export interface Ragdoll {
   landTimer: number;
   maxSpeed: number;
   floorBounceCount: number;
+  previousSubDt?: number;
 }
 
 export interface Spike {

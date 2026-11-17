@@ -118,7 +118,7 @@ export function GameCanvas({
         tuck: false,
         aimActive: false,
         aimAngle:
-          lvl.platformSide === 'left' ? -Math.PI * 0.72 : -Math.PI * 0.28,
+          lvl.platformSide === 'left' ? -Math.PI * 0.6 : -Math.PI * 0.4,
         aimPower: 0.45,
       },
       lastTelemetryAt: 0,
@@ -228,7 +228,7 @@ export function GameCanvas({
     ro.observe(canvas);
 
     const frame = (now: number) => {
-      const rawDt = Math.min(0.033, Math.max(0.004, (now - lastTime) / 1000));
+      const rawDt = Math.min(0.1, Math.max(0, (now - lastTime) / 1000));
       lastTime = now;
 
       const sim = simRef.current;
@@ -491,7 +491,7 @@ export function GameCanvas({
     ) {
       sim.pointerInput.aimPointerId = null;
       sim.input.aimActive = false;
-      triggerDiveRef.current?.();
+      if (e.type !== 'pointercancel') triggerDiveRef.current?.();
       return;
     }
 

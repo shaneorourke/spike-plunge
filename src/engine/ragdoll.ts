@@ -174,7 +174,7 @@ export function launchRagdoll(
   // Angular spin torque driven by horizontal aim angle & launch power
   const horizRatio = vx / vMag;
   const omega =
-    (horizRatio * 5.2 + dirSign * 1.15) *
+    (horizRatio * 1.4 + dirSign * 0.3) *
     (0.45 + 0.75 * clampedPower) *
     gravityScale;
 
@@ -250,6 +250,8 @@ export function launchRagdoll(
     n.oldX = n.x - (nodeVxs[i] - errVx) * dt;
     n.oldY = n.y - (nodeVys[i] - errVy) * dt;
   }
+
+  ragdoll.previousSubDt = dt;
 
   // Spawn takeoff dust puff from feet on platform
   if (gore) {
@@ -530,10 +532,19 @@ export function stepRagdollAndGore(
   const subSteps = 3;
   const subDt = dt / subSteps;
 
+  // Verlet stores displacement, so changing time scale must also rescale it.
+  const previousSubDt = ragdoll.previousSubDt ?? subDt;
+  const timeRatio = subDt / previousSubDt;
+  for (const n of ragdoll.nodes) {
+    n.oldX = n.x - (n.x - n.oldX) * timeRatio;
+    n.oldY = n.y - (n.y - n.oldY) * timeRatio;
+  }
+  ragdoll.previousSubDt = subDt;
+
   for (let step = 0; step < subSteps; step++) {
     // 1. Verlet integration + forces (tuck does NOT alter drag or gravity — pure limb avoidance)
-    const dragX = 0.986;
-    const dragY = 0.9965;
+    const dragX = Math.pow(0.986, subDt * 180);
+    const dragY = Math.pow(0.9965, subDt * 180);
 
     for (let i = 0; i < ragdoll.nodes.length; i++) {
       const n = ragdoll.nodes[i];
@@ -626,13 +637,13 @@ export function stepRagdollAndGore(
         denominator += n.mass * (rx * rx + ry * ry);
       }
       const currentOmega = denominator > 0.001 ? numerator / denominator : 0;
-      const targetOmega = Math.max(-0.65, Math.min(0.65, currentOmega * 0.35));
+      const targetOmega = Math.max(-0.65, Math.min(0.65, currentOmega / subDt * 0.35));
 
       for (const n of ragdoll.nodes) {
         const rx = n.x - comX;
         const ry = n.y - comY;
-        const rotVx = comVx - targetOmega * ry;
-        const rotVy = comVy + targetOmega * rx;
+        const rotVx = comVx - targetOmega * ry * subDt;
+        const rotVy = comVy + targetOmega * rx * subDt;
         const curVx = n.x - n.oldX;
         const curVy = n.y - n.oldY;
         const blendedVx = curVx * 0.3 + rotVx * 0.7;

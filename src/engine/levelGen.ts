@@ -1,14 +1,13 @@
 import type { LevelConfig, Spike } from '../types/game';
 
-function getDifficultyLabel(level: number): string {
-  if (level === 1) return 'Wide Funnel';
-  if (level <= 3) return 'Narrowing V';
-  if (level <= 6) return 'Steep Chute';
-  if (level <= 10) return 'Tight Funnel';
-  if (level <= 15) return 'Needle Eye';
-  if (level <= 22) return 'Terminal V';
-  return 'Razor Abyss';
-}
+const ROUTES = [
+  { name: 'First Flight', shift: 0, width: 0, depth: 0 },
+  { name: 'Long Glide', shift: 12, width: 12, depth: 140 },
+  { name: 'Precision Drop', shift: -10, width: -8, depth: 30 },
+  { name: 'Offset Canyon', shift: 22, width: 10, depth: 200 },
+  { name: 'Needle Practice', shift: 0, width: -16, depth: 80 },
+  { name: 'Endurance Plunge', shift: -18, width: 6, depth: 300 },
+];
 
 export function getShaftBoundsAtY(
   level: LevelConfig,
@@ -22,33 +21,21 @@ export function getShaftBoundsAtY(
 }
 
 export function generateLevel(level: number): LevelConfig {
+  level = Math.max(1, Math.floor(Number.isFinite(level) ? level : 1));
+  const route = ROUTES[(level - 1) % ROUTES.length];
+  // Teach a pattern, then revisit it with a little less clearance. Difficulty
+  // approaches a ceiling: no infinitely long shafts or body-width exits.
+  const challenge = 1 - Math.exp(-(level - 1) / 18);
   const worldWidth = 420;
-  const centerX = worldWidth * 0.5;
-
-  // V-shaped shaft shape modification at level 15+:
-  // Make top wider (smaller inset) and bottom narrower, with more headroom at launch area
-  let topInset: number;
-  let bottomWidth: number;
-  let platformY = 140;
-
-  if (level < 15) {
-    topInset = Math.min(126, 84 + Math.floor((level - 1) * 2.5));
-    bottomWidth = Math.max(70, 178 - (level - 1) * 7);
-    platformY = 140;
-  } else {
-    topInset = Math.max(28, 62 - (level - 15) * 2);
-    bottomWidth = Math.max(34, 56 - (level - 15) * 1.5);
-    platformY = 175;
-  }
-
+  const centerX = 210 + route.shift * Math.min(1, (level - 1) / 6);
+  const platformY = 140;
+  const topInset = 72 + challenge * 10;
+  const bottomWidth = 150 - challenge * 54 + route.width;
   const topLeftX = topInset;
   const topRightX = worldWidth - topInset;
-
   const bottomLeftX = centerX - bottomWidth * 0.5;
   const bottomRightX = centerX + bottomWidth * 0.5;
-
-  // Shaft grows infinitely longer per level
-  const shaftHeight = 960 + (level - 1) * 210;
+  const shaftHeight = 780 + challenge * 520 + route.depth;
   const floorY = platformY + shaftHeight;
 
   const platformSide: 'left' | 'right' = level % 2 === 1 ? 'left' : 'right';
@@ -57,12 +44,12 @@ export function generateLevel(level: number): LevelConfig {
   const platformX =
     platformSide === 'left' ? topLeftX - platformWidth : topRightX;
 
-  const gravity = Math.min(1650, 820 + (level - 1) * 30);
+  const gravity = 820;
 
   // Continuous spikes lining both sloped V-walls starting below the pit rim
   const wallSpikes: Spike[] = [];
   const spikePitch = 26;
-  const spikeDepth = Math.min(18, 14 + Math.floor((level - 1) * 0.2));
+  const spikeDepth = 12 + challenge * 3;
 
   const leftStartY =
     platformSide === 'left' ? platformY + 14 : platformY + 6;
@@ -148,6 +135,6 @@ export function generateLevel(level: number): LevelConfig {
     pistons: [],
     saws: [],
     windZones: [],
-    difficultyLabel: getDifficultyLabel(level),
+    difficultyLabel: `${route.name}${level > 6 ? ` · ${Math.floor((level - 1) / 6) + 1}` : ''}`,
   };
 }

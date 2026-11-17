@@ -283,12 +283,14 @@ export function renderGame(params: RenderParams): void {
 
   // 11. Aim Trajectory Preview when ready to jump (integrates real horizontal air drag)
   if (phase === 'READY') {
-    const origin = ragdoll.nodes[2];
+    const totalMass = ragdoll.nodes.reduce((sum, n) => sum + n.mass, 0);
+    const origin = {
+      x: ragdoll.nodes.reduce((sum, n) => sum + n.x * n.mass, 0) / totalMass,
+      y: ragdoll.nodes.reduce((sum, n) => sum + n.y * n.mass, 0) / totalMass,
+    };
     const dirSign = level.platformSide === 'left' ? 1 : -1;
-    const defaultAngle =
-      level.platformSide === 'left' ? -Math.PI * 0.72 : -Math.PI * 0.28;
-    const angle = input.aimActive ? input.aimAngle : defaultAngle;
-    const power = input.aimActive ? input.aimPower : 0.45;
+    const angle = input.aimAngle;
+    const power = input.aimPower;
     const gravityScale = Math.sqrt(Math.max(1, level.gravity) / 820);
     const spd = (180 + power * 420) * gravityScale;
     let simVx = Math.cos(angle) * spd;
@@ -296,7 +298,6 @@ export function renderGame(params: RenderParams): void {
 
     let px = origin.x;
     let py = origin.y;
-    const subDt = 1 / 180;
     const dragXPerSec = Math.pow(0.986, 180);
     const dragYPerSec = Math.pow(0.9965, 180);
 
@@ -304,7 +305,7 @@ export function renderGame(params: RenderParams): void {
     for (let dot = 1; dot <= 14; dot++) {
       const stepDt = 0.05;
       // Integrate in small chunks for smooth drag match
-      const sub = 3;
+      const sub = 9;
       const dtChunk = stepDt / sub;
       for (let s = 0; s < sub; s++) {
         simVx *= Math.pow(dragXPerSec, dtChunk);
@@ -317,7 +318,6 @@ export function renderGame(params: RenderParams): void {
       ctx.fillStyle = `rgba(245, 158, 11, ${Math.max(0.18, 0.92 - dot * 0.055)})`;
       ctx.fill();
     }
-    void subDt;
 
     // Subtle platform jump hint
     if (!input.aimActive) {
