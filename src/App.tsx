@@ -413,7 +413,7 @@ export default function App() {
             />
 
             {/* Sub-header subtle shaft info */}
-            {phase !== 'TITLE' && (
+            {phase !== 'TITLE' && phase !== 'READY' && (
               <div className="pointer-events-none absolute top-2.5 left-3 right-6 flex items-center justify-between text-[11px] font-medium text-slate-400">
                 <span className="truncate">
                   {levelMeta.difficultyLabel}
@@ -426,14 +426,20 @@ export default function App() {
 
             {phase === 'READY' && <>
               {scoutOpen && <LevelScout level={levelMeta} />}
-              <button type="button" onClick={() => setScoutOpen(v => !v)}
-                className="absolute top-10 right-3 z-30 min-h-10 px-3 rounded-lg border border-cyan-500/40 bg-[#11151D]/95 text-cyan-300 text-xs font-bold">
-                {scoutOpen ? 'Close survey' : 'Scout shaft'}
-              </button>
-              {!scoutOpen && <div className="absolute bottom-3 left-3 right-3 rounded-xl border border-slate-700 bg-[#0e141f]/95 p-3 z-10">
-                <div className="flex items-center justify-between text-[10px] font-mono mb-3">
-                  <span className="text-red-400 tracking-widest">{levelMeta.tier}</span>
-                  <span className="text-slate-400">Attempt {(progress.stageStats[levelNumber]?.attempts ?? 0) + 1}</span>
+              {scoutOpen && <button type="button" onClick={() => setScoutOpen(false)}
+                className="absolute top-3 right-3 z-30 min-h-10 px-3 rounded-lg border border-cyan-500/40 bg-[#11151D]/95 text-cyan-300 text-xs font-bold">
+                Close survey
+              </button>}
+              {!scoutOpen && <div className="absolute top-3 left-3 right-3 rounded-xl border border-slate-700 bg-[#0e141f]/95 p-3 z-10">
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-semibold text-slate-200">{levelMeta.difficultyLabel}</p>
+                    <p className="text-[10px] font-mono text-slate-400 mt-0.5"><span className="text-red-400">{levelMeta.tier}</span> · Attempt {(progress.stageStats[levelNumber]?.attempts ?? 0) + 1}</p>
+                  </div>
+                  <button type="button" onClick={() => setScoutOpen(true)}
+                    className="shrink-0 min-h-9 px-2.5 rounded-lg border border-cyan-500/40 text-cyan-300 text-xs font-bold hover:bg-cyan-950/40">
+                    Scout shaft
+                  </button>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <label className="text-xs text-slate-300">Elevation <strong className="float-right text-amber-400 font-mono">{aim.elevation.toFixed(2)}°</strong>
