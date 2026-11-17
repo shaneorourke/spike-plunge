@@ -40,3 +40,9 @@ The headless check uses the production physics solver. It searches 108 angle/pow
 These are reachability checks, not estimated player win rates. Browser playtesting remains necessary for input feel and presentation.
 
 Flight-control regression checks cover neutral stability during repeated tuck transitions, unchanged centre-of-mass trajectory, bidirectional speed limits, hold-angle behavior on release, and gradual folding.
+
+## Diver models
+
+The nine cosmetic divers share the same collision body and handling. Models use outlined, shaded canvas shapes, layered front/back limbs, and species-specific paws, claws, feathers, flippers, and torso details. Bunny ears and shark fins fold closer during tuck; accessories are decorative.
+
+The locker supports full-body upright, tucked, and sideways previews, including locked divers. Inspecting a locked diver does not unlock or equip it. Only unlocked divers can be equipped. The preview uses the production renderer and controlled-flight pose construction on an isolated character instance.

@@ -1,5 +1,7 @@
 import type { CharacterId, GamePhase, Ragdoll } from '../types/game';
-import { getRagdollCenter } from './ragdoll';
+import { createRagdollOnPlatform } from './ragdoll';
+import { generateLevel } from './levelGen';
+import { stepControlledFlight } from './flightControl';
 
 interface CharPalette {
   limb: string;
@@ -33,10 +35,10 @@ function getPalette(
       };
     case 'capybara':
       return {
-        limb: '#78350F',
-        torso: '#A16207',
-        belly: '#CA8A04',
-        head: '#B45309',
+        limb: '#87532E',
+        torso: '#B7793F',
+        belly: '#E7B879',
+        head: '#C58A50',
         accent: '#F97316',
       };
     case 'sloth':
@@ -80,7 +82,7 @@ function getPalette(
       };
     case 'stickman':
     default: {
-      const col = alive ? (tucking ? '#FDE68A' : '#F8FAFC') : '#E2E8F0';
+      const col = alive ? '#F8FAFC' : '#CBD5E1';
       return { limb: col, torso: col, head: col, accent: '#F59E0B' };
     }
   }
@@ -456,7 +458,8 @@ function drawHeadExtras(
   id: CharacterId,
   headRadius: number,
   speedKmh: number,
-  alive: boolean
+  alive: boolean,
+  tuck = 0
 ): void {
   const flutter = Math.min(0.55, speedKmh * 0.0038);
 
@@ -509,18 +512,18 @@ function drawHeadExtras(
     for (const side of [-1, 1]) {
       ctx.save();
       ctx.translate(side * 4.2, -headRadius + 1.2);
-      ctx.rotate(side * (0.22 + flutter));
+      ctx.rotate(side * (0.12 + flutter * .35 + tuck * 1.1));
       ctx.fillStyle = '#F8FAFC';
       ctx.strokeStyle = '#090B0F';
       ctx.lineWidth = 1.6;
       ctx.beginPath();
-      ctx.ellipse(0, -8.5, 3.0, 9.0, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, -5.5 + tuck * 2, 2.8, 6.5 - tuck * 2, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
 
       ctx.fillStyle = '#F9A8D4';
       ctx.beginPath();
-      ctx.ellipse(0, -8.5, 1.4, 5.8, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, -5.5 + tuck * 2, 1.3, 4.2 - tuck * 1.6, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     }
@@ -558,7 +561,7 @@ function drawHeadExtras(
     ctx.lineWidth = 1.6;
     ctx.beginPath();
     ctx.moveTo(-3.2, -headRadius + 1);
-    ctx.lineTo(0.8, -headRadius - 9.0);
+    ctx.lineTo(0.8, -headRadius - 5.0 + tuck * 3);
     ctx.lineTo(4.6, -headRadius + 2);
     ctx.closePath();
     ctx.fill();
@@ -566,515 +569,213 @@ function drawHeadExtras(
   }
 }
 
-function drawLimbTipDetails(
-  ctx: CanvasRenderingContext2D,
-  ragdoll: Ragdoll,
-  charId: CharacterId,
-  palette: CharPalette
-): void {
-  const nodes = ragdoll.nodes;
-  const armLeftOk = isBoneIntact(ragdoll, 'foreArmL') && isBoneIntact(ragdoll, 'upperArmL');
-  const armRightOk = isBoneIntact(ragdoll, 'foreArmR') && isBoneIntact(ragdoll, 'upperArmR');
-  const legLeftOk = isBoneIntact(ragdoll, 'shinL') && isBoneIntact(ragdoll, 'thighL');
-  const legRightOk = isBoneIntact(ragdoll, 'shinR') && isBoneIntact(ragdoll, 'thighR');
+const INK = '#111827';
 
-  const hands: { idx: number; elbowIdx: number; ok: boolean }[] = [
-    { idx: 5, elbowIdx: 4, ok: armLeftOk },
-    { idx: 7, elbowIdx: 6, ok: armRightOk },
-  ];
-  const feet: { idx: number; kneeIdx: number; ok: boolean }[] = [
-    { idx: 9, kneeIdx: 8, ok: legLeftOk },
-    { idx: 11, kneeIdx: 10, ok: legRightOk },
-  ];
+function ellipse(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, ry: number, fill: string, outline = true) {
+  ctx.beginPath();
+  ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fillStyle = fill;
+  ctx.fill();
+  if (outline) { ctx.strokeStyle = INK; ctx.lineWidth = 1.35; ctx.stroke(); }
+}
 
-  // Hand/wing details
-  for (const h of hands) {
-    if (!h.ok) continue;
-    const hand = nodes[h.idx];
-    const elbow = nodes[h.elbowIdx];
-    const ang = Math.atan2(hand.y - elbow.y, hand.x - elbow.x);
+function material(ctx: CanvasRenderingContext2D, color: string, top: number, bottom: number) {
+  const shade = ctx.createLinearGradient(-6, top, 7, bottom);
+  shade.addColorStop(0, color);
+  shade.addColorStop(.6, color);
+  shade.addColorStop(1, '#334155');
+  return shade;
+}
 
-    ctx.save();
-    ctx.translate(hand.x, hand.y);
-    ctx.rotate(ang);
-
-    if (charId === 'sloth') {
-      // Three curved ivory claws
-      ctx.strokeStyle = '#F5F5F4';
-      ctx.lineWidth = 1.6;
-      for (const cy of [-2, 0, 2]) {
-        ctx.beginPath();
-        ctx.moveTo(0, cy);
-        ctx.quadraticCurveTo(4, cy + 0.5, 5.5, cy + 2.2);
-        ctx.stroke();
-      }
-    } else if (charId === 'chicken') {
-      // Feathered wingtip fan
-      ctx.fillStyle = '#FEF3C7';
-      ctx.strokeStyle = '#090B0F';
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.ellipse(0, 0, 4.8, 3.0, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    } else if (charId === 'shark' || charId === 'penguin') {
-      // Sleek flipper paddle
-      ctx.fillStyle = palette.limb;
-      ctx.strokeStyle = '#090B0F';
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.ellipse(1.5, 0, 4.5, 2.3, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    } else if (charId === 'bunny') {
-      ctx.fillStyle = '#F8FAFC';
-      ctx.strokeStyle = '#090B0F';
-      ctx.lineWidth = 1.1;
-      ctx.beginPath();
-      ctx.arc(0, 0, 3.0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = '#F472B6';
-      ctx.beginPath();
-      ctx.arc(0.5, 0, 1.3, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (charId === 'skeleton') {
-      ctx.fillStyle = '#F1F5F9';
-      ctx.strokeStyle = '#090B0F';
-      ctx.lineWidth = 1.1;
-      ctx.beginPath();
-      ctx.arc(0, 0, 2.6, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  // Foot/talon/webbed foot details
-  for (const f of feet) {
-    if (!f.ok) continue;
-    const foot = nodes[f.idx];
-    const knee = nodes[f.kneeIdx];
-    const ang = Math.atan2(foot.y - knee.y, foot.x - knee.x);
-
-    ctx.save();
-    ctx.translate(foot.x, foot.y);
-    ctx.rotate(ang);
-
-    if (charId === 'chicken' || charId === 'penguin') {
-      // Orange webbed/talon feet
-      ctx.fillStyle = '#F59E0B';
-      ctx.strokeStyle = '#090B0F';
-      ctx.lineWidth = 1.1;
-      ctx.beginPath();
-      ctx.moveTo(-1, 0);
-      ctx.lineTo(5.5, -3.2);
-      ctx.lineTo(6.2, 0);
-      ctx.lineTo(5.5, 3.2);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-    } else if (charId === 'frog') {
-      // Webbed green toes
-      ctx.fillStyle = '#22C55E';
-      ctx.strokeStyle = '#090B0F';
-      ctx.lineWidth = 1.1;
-      ctx.beginPath();
-      ctx.moveTo(-1, 0);
-      ctx.lineTo(5.8, -3.8);
-      ctx.lineTo(6.8, 0);
-      ctx.lineTo(5.8, 3.8);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-    } else if (charId === 'bunny') {
-      // Long padded rabbit hind foot
-      ctx.fillStyle = '#F8FAFC';
-      ctx.strokeStyle = '#090B0F';
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.ellipse(2.2, 0, 4.6, 2.4, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    } else if (charId === 'sloth') {
-      ctx.strokeStyle = '#F5F5F4';
-      ctx.lineWidth = 1.5;
-      for (const cy of [-1.8, 0, 1.8]) {
-        ctx.beginPath();
-        ctx.moveTo(0, cy);
-        ctx.quadraticCurveTo(3.5, cy + 0.5, 5, cy + 2);
-        ctx.stroke();
-      }
-    } else if (charId === 'skeleton') {
-      ctx.fillStyle = '#F1F5F9';
-      ctx.strokeStyle = '#090B0F';
-      ctx.lineWidth = 1.1;
-      ctx.beginPath();
-      ctx.arc(0, 0, 2.7, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    }
-    ctx.restore();
+function segment(ctx: CanvasRenderingContext2D, rag: Ragdoll, id: string, width: number, color: string, highlight = true) {
+  const bone = rag.bones.find(b => b.id === id);
+  if (!bone || bone.severed) return;
+  const a = rag.nodes[bone.a], b = rag.nodes[bone.b];
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+  ctx.strokeStyle = INK; ctx.lineWidth = width + 2.4; ctx.stroke();
+  ctx.strokeStyle = color; ctx.lineWidth = width; ctx.stroke();
+  if (highlight) {
+    ctx.beginPath();
+    ctx.moveTo(a.x - .6, a.y - .5); ctx.lineTo(b.x - .6, b.y - .5);
+    ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.lineWidth = .8; ctx.stroke();
   }
 }
 
-export function drawRagdollCharacter(
-  ctx: CanvasRenderingContext2D,
-  ragdoll: Ragdoll,
-  charId: CharacterId,
-  phase: GamePhase,
-  speedKmh: number
-): void {
-  const nodes = ragdoll.nodes;
-  const palette = getPalette(charId, ragdoll.tucking, ragdoll.alive);
-
-  // Tuck avoidance silhouette ring
-  if (ragdoll.alive && ragdoll.tucking) {
-    const c = getRagdollCenter(ragdoll);
-    ctx.beginPath();
-    ctx.arc(c.x, c.y, 24, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(245, 158, 11, 0.35)';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([4, 4]);
-    ctx.stroke();
-    ctx.setLineDash([]);
+function drawArmOrLeg(ctx: CanvasRenderingContext2D, rag: Ragdoll, charId: CharacterId, p: CharPalette, side: 'L' | 'R', leg: boolean) {
+  const animal = charId !== 'stickman' && charId !== 'skeleton';
+  const flipper = !leg && (charId === 'shark' || charId === 'penguin');
+  const wing = !leg && charId === 'chicken';
+  const ids = leg ? [`thigh${side}`, `shin${side}`] : [`upperArm${side}`, `foreArm${side}`];
+  const width = charId === 'skeleton' ? 2.6 : flipper ? 5.8 : wing ? 5.5 : animal ? 4.8 : 3.6;
+  const color = wing ? p.torso : p.limb;
+  ids.forEach(id => segment(ctx, rag, id, width, color));
+  const endIndex = leg ? (side === 'L' ? 9 : 11) : (side === 'L' ? 5 : 7);
+  const previousIndex = endIndex - 1;
+  if (!isBoneIntact(rag, ids[1])) return;
+  const tip = rag.nodes[endIndex], previous = rag.nodes[previousIndex];
+  ctx.save(); ctx.translate(tip.x, tip.y);
+  ctx.rotate(Math.atan2(tip.y - previous.y, tip.x - previous.x) - Math.PI / 2);
+  if (wing) {
+    ellipse(ctx, 0, .6, 3.4, 3.5, '#FFF6D9');
+    ctx.strokeStyle = '#C7AD7C'; ctx.lineWidth = .7;
+    for (const x of [-1.3, 1.3]) { ctx.beginPath(); ctx.moveTo(x, -.3); ctx.lineTo(x, 2.4); ctx.stroke(); }
+  } else if (flipper) {
+    ctx.beginPath(); ctx.moveTo(-2.8,-3); ctx.quadraticCurveTo(-3.8,2,0,4.5);
+    ctx.quadraticCurveTo(3.8,2,2.8,-3); ctx.closePath();
+    ctx.fillStyle = p.limb; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1.1; ctx.stroke();
+  } else if (leg && (charId === 'penguin' || charId === 'chicken')) {
+    ellipse(ctx, 0, .7, 4, 2.4, '#FFB547');
+    ctx.strokeStyle = '#AD5D20'; ctx.lineWidth = .7;
+    for (const x of [-1.3, 1.3]) { ctx.beginPath(); ctx.moveTo(x, .6); ctx.lineTo(x, 2); ctx.stroke(); }
+  } else if (charId === 'frog') {
+    ctx.strokeStyle = INK; ctx.lineWidth = 2.8;
+    for (const x of [-2.5, 0, 2.5]) { ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(x, 2.4); ctx.stroke(); }
+    for (const x of [-2.5, 0, 2.5]) ellipse(ctx, x, 2.4, 1.1, 1.1, '#86EFAC', false);
+  } else if (charId === 'sloth') {
+    ellipse(ctx, 0, 0, 2.9, 2.7, p.limb);
+    ctx.strokeStyle = '#F7EAD5'; ctx.lineWidth = 1.1;
+    for (const x of [-1.6, 0, 1.6]) { ctx.beginPath(); ctx.moveTo(x, 1); ctx.quadraticCurveTo(x + .5, 4, x + 1, 3.7); ctx.stroke(); }
+  } else if (leg && charId === 'bunny') {
+    ellipse(ctx, 0, .5, 3.7, 3, p.head);
+    ellipse(ctx, 0, 1, 1.7, 1, '#F9A8D4', false);
+  } else if (charId === 'stickman') {
+    ellipse(ctx, 0, .2, leg ? 3.3 : 2.6, leg ? 2.2 : 2.5, '#FBBF24');
+    if (leg) { ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-2, 1.8); ctx.lineTo(2, 1.8); ctx.stroke(); }
+  } else if (charId === 'capybara') {
+    ellipse(ctx, 0, .3, 3.1, 2.8, '#87532E');
+    ctx.strokeStyle = '#E7B879'; ctx.lineWidth = .65;
+    for (const x of [-1, 1]) { ctx.beginPath(); ctx.moveTo(x, .5); ctx.lineTo(x, 1.8); ctx.stroke(); }
+  } else if (charId === 'bunny' || charId === 'skeleton') {
+    ellipse(ctx, 0, 0, 2.6, 2.6, p.head);
   }
-
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-
-  // 1. Character Limbs (dark outline pass + color fill pass)
-  for (const bone of ragdoll.bones) {
-    if (bone.severed || bone.isPostureSpring) continue;
-    const a = nodes[bone.a];
-    const b = nodes[bone.b];
-
-    const isTorso = bone.id === 'neck-chest' || bone.id === 'chest-pelvis';
-    const thickBoost =
-      charId !== 'stickman' && charId !== 'skeleton'
-        ? isTorso
-          ? 4.4
-          : 1.8
-        : 0;
-
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.strokeStyle = '#090B0F';
-    ctx.lineWidth = bone.thickness + thickBoost + 3.2;
-    ctx.stroke();
-  }
-
-  for (const bone of ragdoll.bones) {
-    if (bone.severed || bone.isPostureSpring) continue;
-    const a = nodes[bone.a];
-    const b = nodes[bone.b];
-
-    const isTorso = bone.id === 'neck-chest' || bone.id === 'chest-pelvis';
-    const thickBoost =
-      charId !== 'stickman' && charId !== 'skeleton'
-        ? isTorso
-          ? 4.4
-          : 1.8
-        : 0;
-
-    let color = isTorso ? palette.torso : palette.limb;
-    if (
-      charId === 'chicken' &&
-      (bone.id.includes('Arm') || bone.id.includes('arm'))
-    ) {
-      color = '#FFFBEB';
-    }
-
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = bone.thickness + thickBoost;
-    ctx.stroke();
-  }
-
-  // Subtle joint dots for stickman (wrists/ankles) & skeleton (elbows/knees)
-  if (charId === 'stickman') {
-    for (const jIdx of [5, 7, 9, 11]) {
-      const n = nodes[jIdx];
-      ctx.fillStyle = '#F59E0B';
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, 2.2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  } else if (charId === 'skeleton') {
-    for (const jIdx of [4, 6, 8, 10]) {
-      const n = nodes[jIdx];
-      ctx.fillStyle = '#F1F5F9';
-      ctx.strokeStyle = '#090B0F';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, 2.3, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    }
-  }
-
-  // 2. Plump Character Torso Overlays (for animal characters & skeleton ribcage)
-  const chest = nodes[2];
-  const pelvis = nodes[3];
-  const torsoIntact = isBoneIntact(ragdoll, 'chest-pelvis');
-  if (torsoIntact && charId !== 'stickman') {
-    const tx = (chest.x + pelvis.x) * 0.5;
-    const ty = (chest.y + pelvis.y) * 0.5;
-    const tAngle =
-      Math.atan2(pelvis.y - chest.y, pelvis.x - chest.x) - Math.PI * 0.5;
-
-    ctx.save();
-    ctx.translate(tx, ty);
-    ctx.rotate(tAngle);
-
-    if (charId === 'skeleton') {
-      // Bleached curved ribcage bars + pelvis wing
-      ctx.strokeStyle = '#090B0F';
-      ctx.lineWidth = 3.8;
-      for (const ry of [-4.5, -0.5, 3.5]) {
-        ctx.beginPath();
-        ctx.moveTo(-6, ry);
-        ctx.quadraticCurveTo(0, ry + 1.5, 6, ry);
-        ctx.stroke();
-      }
-      ctx.strokeStyle = '#F1F5F9';
-      ctx.lineWidth = 2.0;
-      for (const ry of [-4.5, -0.5, 3.5]) {
-        ctx.beginPath();
-        ctx.moveTo(-6, ry);
-        ctx.quadraticCurveTo(0, ry + 1.5, 6, ry);
-        ctx.stroke();
-      }
-      // Hip pelvis bone
-      ctx.fillStyle = '#E2E8F0';
-      ctx.strokeStyle = '#090B0F';
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.ellipse(0, 8.5, 5.2, 2.8, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    } else {
-      const rx =
-        charId === 'capybara' || charId === 'penguin' || charId === 'chicken'
-          ? 8.8
-          : 7.4;
-      const ry = 10.8;
-      ctx.fillStyle = palette.torso;
-      ctx.strokeStyle = '#090B0F';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-
-      if (palette.belly) {
-        ctx.fillStyle = palette.belly;
-        ctx.beginPath();
-        ctx.ellipse(0, 1.2, rx * 0.58, ry * 0.72, 0, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      if (charId === 'frog') {
-        // Dark emerald amphibian spots
-        ctx.fillStyle = '#15803D';
-        ctx.beginPath();
-        ctx.arc(-4.5, -4, 1.5, 0, Math.PI * 2);
-        ctx.arc(4.8, -2, 1.3, 0, Math.PI * 2);
-        ctx.arc(-4.2, 4.5, 1.2, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      if (charId === 'shark') {
-        // Gill slits + dorsal fin + forked tail fin
-        ctx.strokeStyle = '#0F172A';
-        ctx.lineWidth = 1.2;
-        for (const gy of [-4.5, -2.2, 0.1]) {
-          ctx.beginPath();
-          ctx.moveTo(-rx + 1.5, gy);
-          ctx.lineTo(-rx + 4.0, gy + 0.5);
-          ctx.stroke();
-        }
-        // Dorsal fin
-        ctx.fillStyle = '#334155';
-        ctx.strokeStyle = '#090B0F';
-        ctx.lineWidth = 1.6;
-        ctx.beginPath();
-        ctx.moveTo(rx - 2, -4);
-        ctx.lineTo(rx + 8.5, -1);
-        ctx.lineTo(rx - 1, 5.5);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-
-        // Forked tail fin at pelvis
-        ctx.beginPath();
-        ctx.moveTo(-1, ry - 1);
-        ctx.lineTo(-5.5, ry + 7);
-        ctx.lineTo(0, ry + 4);
-        ctx.lineTo(5.5, ry + 7);
-        ctx.lineTo(1, ry - 1);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-      }
-
-      if (charId === 'chicken') {
-        // Fluffy tail feathers
-        ctx.fillStyle = '#FEF3C7';
-        ctx.strokeStyle = '#090B0F';
-        ctx.lineWidth = 1.3;
-        ctx.beginPath();
-        ctx.moveTo(-3, ry - 2);
-        ctx.lineTo(-6.5, ry + 4.5);
-        ctx.lineTo(0, ry + 2.5);
-        ctx.lineTo(6.5, ry + 4.5);
-        ctx.lineTo(3, ry - 2);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-      }
-
-      if (charId === 'bunny') {
-        // Cotton tail
-        ctx.fillStyle = '#FFFFFF';
-        ctx.strokeStyle = '#090B0F';
-        ctx.lineWidth = 1.4;
-        ctx.beginPath();
-        ctx.arc(-rx + 1, ry - 3, 4.0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-      }
-    }
-    ctx.restore();
-  }
-
-  // Limb tip accessories (claws, flippers, webbed feet, wings, paws)
-  drawLimbTipDetails(ctx, ragdoll, charId, palette);
-
-  // Draw crimson stumps where bones were severed
-  for (const bone of ragdoll.bones) {
-    if (!bone.severed || bone.isPostureSpring) continue;
-    const a = nodes[bone.a];
-    const b = nodes[bone.b];
-    ctx.fillStyle = '#DC2626';
-    ctx.beginPath();
-    ctx.arc(a.x, a.y, 3.2, 0, Math.PI * 2);
-    ctx.arc(b.x, b.y, 3.2, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // 3. Character Head
-  const head = nodes[0];
-  const neck = nodes[1];
-  const headAngle =
-    Math.atan2(head.y - neck.y, head.x - neck.x) + Math.PI * 0.5;
-  const r = charId === 'capybara' ? head.radius + 1.3 : head.radius;
-
-  ctx.save();
-  ctx.translate(head.x, head.y);
-  ctx.rotate(headAngle);
-
-  drawHeadExtras(ctx, charId, r, speedKmh, ragdoll.alive);
-
-  ctx.beginPath();
-  if (charId === 'capybara') {
-    ctx.roundRect(-r, -r * 0.85, r * 2, r * 1.75, 5);
-  } else if (charId === 'shark') {
-    // Slightly pointed hydro-dynamic shark head
-    ctx.ellipse(0, 0, r * 1.05, r * 0.96, 0, 0, Math.PI * 2);
-  } else {
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
-  }
-  ctx.fillStyle = palette.head;
-  ctx.fill();
-  ctx.strokeStyle = '#090B0F';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  drawEyesAndFace(
-    ctx,
-    charId,
-    ragdoll.alive,
-    phase,
-    speedKmh,
-    ragdoll.tucking
-  );
   ctx.restore();
 }
 
-export function drawCharacterPortrait(
-  ctx: CanvasRenderingContext2D,
-  charId: CharacterId,
-  size: number
-): void {
-  ctx.clearRect(0, 0, size, size);
-  const cx = size * 0.5;
-  const cy = size * 0.58;
-  const palette = getPalette(charId, false, true);
-
+function drawTorso(ctx: CanvasRenderingContext2D, rag: Ragdoll, id: CharacterId, p: CharPalette) {
+  if (!isBoneIntact(rag, 'chest-pelvis')) return;
+  const chest = rag.nodes[2], hips = rag.nodes[3];
   ctx.save();
-  ctx.translate(cx, cy);
-  const scale = size / 44;
-  ctx.scale(scale, scale);
+  ctx.translate((chest.x + hips.x) / 2, (chest.y + hips.y) / 2);
+  ctx.rotate(Math.atan2(hips.y - chest.y, hips.x - chest.x) - Math.PI / 2);
+  const tuck = rag.tuckAmount;
+  const plump = id === 'capybara' || id === 'penguin' || id === 'chicken';
+  const ry = (plump ? 12 : 10) - tuck * (plump ? 3.5 : 1.8);
+  const rx = id === 'capybara' ? 8.5 : id === 'penguin' ? 8 : id === 'chicken' ? 8.6 : id === 'stickman' ? 4.8 : 6.2;
 
-  // Shoulders / mini torso hint
-  if (charId !== 'stickman' && charId !== 'skeleton') {
-    ctx.fillStyle = palette.torso;
-    ctx.strokeStyle = '#090B0F';
-    ctx.lineWidth = 1.8;
-    ctx.beginPath();
-    ctx.ellipse(0, 12, 8.8, 9, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    if (palette.belly) {
-      ctx.fillStyle = palette.belly;
-      ctx.beginPath();
-      ctx.ellipse(0, 13, 4.8, 6, 0, 0, Math.PI * 2);
-      ctx.fill();
+  if (id === 'shark') {
+    ctx.fillStyle = '#5C94B3'; ctx.strokeStyle = INK; ctx.lineWidth = 1.3;
+    ctx.beginPath(); ctx.moveTo(3, -5); ctx.lineTo(12 - tuck * 5, 0); ctx.lineTo(3, 5); ctx.closePath(); ctx.fill(); ctx.stroke();
+    if (tuck < .8) {
+      ctx.beginPath(); ctx.moveTo(-2,ry-3); ctx.lineTo(-5,ry+5-tuck*5);
+      ctx.lineTo(0,ry+2); ctx.lineTo(5,ry+5-tuck*5); ctx.lineTo(2,ry-3); ctx.closePath(); ctx.fill(); ctx.stroke();
     }
-  } else if (charId === 'skeleton') {
-    ctx.strokeStyle = '#E2E8F0';
-    ctx.lineWidth = 2.6;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(0, 6);
-    ctx.lineTo(0, 18);
-    ctx.moveTo(-6, 11);
-    ctx.lineTo(6, 11);
-    ctx.moveTo(-5, 15);
-    ctx.lineTo(5, 15);
-    ctx.stroke();
-  } else {
-    ctx.strokeStyle = '#F8FAFC';
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(0, 6);
-    ctx.lineTo(0, 18);
-    ctx.moveTo(-7, 11);
-    ctx.lineTo(7, 11);
-    ctx.stroke();
   }
+  if (id === 'bunny') ellipse(ctx, -rx + 1, 4, 3.3 - tuck, 3.3 - tuck, '#FFFFFF');
 
-  // Head
-  const r = charId === 'capybara' ? 9.8 : 9;
-  drawHeadExtras(ctx, charId, r, 0, true);
+  if (id === 'skeleton') {
+    ctx.strokeStyle = '#E8E2D5'; ctx.lineWidth = 2.3;
+    ctx.beginPath(); ctx.moveTo(0,-8); ctx.lineTo(0,8); ctx.stroke();
+    ctx.lineWidth = 1.6; ctx.strokeStyle = '#F7F0DF';
+    for (const y of [-6, -2, 2]) {
+      ctx.beginPath(); ctx.moveTo(-5, y - 1); ctx.quadraticCurveTo(-6, y + 2, 0, y + 2.5); ctx.quadraticCurveTo(6, y + 2, 5, y - 1); ctx.stroke();
+    }
+    ellipse(ctx, 0, 7, 4.8, 2.6, '#D5CDBE');
+  } else {
+    ctx.beginPath();
+    if (id === 'capybara' || id === 'stickman') ctx.roundRect(-rx, -ry, rx * 2, ry * 2, id === 'capybara' ? 4.5 : 3);
+    else ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = material(ctx, p.torso, -ry, ry); ctx.fill();
+    ctx.strokeStyle = INK; ctx.lineWidth = 1.6; ctx.stroke();
+    if (p.belly) ellipse(ctx, 0, 1, rx * .63, ry * .77, p.belly, false);
+    if (id === 'stickman') {
+      ctx.strokeStyle = '#334155'; ctx.lineWidth = 1.8;
+      ctx.beginPath(); ctx.moveTo(-3, -7); ctx.lineTo(2, 6); ctx.moveTo(3, -7); ctx.lineTo(-2, 6); ctx.stroke();
+      ctx.fillStyle = '#FBBF24'; ctx.fillRect(-2, -1, 4, 3);
+      ctx.fillStyle = '#64748B'; ctx.fillRect(-rx, 5, rx * 2, 2);
+    }
+    if (id === 'frog') for (const [x, y] of [[-4,-4],[4,-3],[-4,3]]) ellipse(ctx,x,y,1.1,1.4,'#15803D',false);
+    if (id === 'shark') {
+      ctx.strokeStyle = '#243C54'; ctx.lineWidth = .9;
+      for (const y of [-4, -1, 2]) { ctx.beginPath(); ctx.moveTo(-4.6,y); ctx.lineTo(-2.7,y+1); ctx.stroke(); }
+    }
+    if (id === 'chicken') {
+      ctx.strokeStyle = '#D6B97E'; ctx.lineWidth = .8;
+      ctx.beginPath(); ctx.moveTo(-3,3); ctx.lineTo(-1,5); ctx.lineTo(1,3); ctx.lineTo(3,5); ctx.stroke();
+    }
+    if (id === 'penguin' || id === 'bunny') {
+      ctx.fillStyle = p.accent; ctx.strokeStyle = INK; ctx.lineWidth = .6;
+      ctx.beginPath(); ctx.moveTo(0,-6); ctx.lineTo(-3.4,-8); ctx.lineTo(-3.4,-4); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0,-6); ctx.lineTo(3.4,-8); ctx.lineTo(3.4,-4); ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
 
+function drawHead(ctx: CanvasRenderingContext2D, id: CharacterId, p: CharPalette, r: number, alive: boolean, phase: GamePhase, speed: number, tuck: number) {
+  drawHeadExtras(ctx, id, r, speed, alive, tuck);
   ctx.beginPath();
-  if (charId === 'capybara') {
-    ctx.roundRect(-r, -r * 0.85, r * 2, r * 1.75, 5);
-  } else {
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
+  if (id === 'capybara') ctx.roundRect(-r, -r * .8, r * 2, r * 1.7, 4.2);
+  else if (id === 'shark') ctx.ellipse(0, .2, r * 1.07, r * .9, 0, 0, Math.PI * 2);
+  else ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fillStyle = material(ctx, p.head, -r, r * 1.8); ctx.fill();
+  ctx.strokeStyle = INK; ctx.lineWidth = 1.6; ctx.stroke();
+  // A restrained rim highlight reads at the actual playfield size.
+  ctx.beginPath(); ctx.arc(-.5, -.5, r - 1.5, -Math.PI * .95, -Math.PI * .35);
+  ctx.strokeStyle = 'rgba(255,255,255,.38)'; ctx.lineWidth = 1; ctx.stroke();
+  drawEyesAndFace(ctx, id, alive, phase, speed, tuck > .65);
+  if (id === 'stickman') {
+    ctx.save(); ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.clip();
+    ctx.fillStyle = '#FBBF24'; ctx.fillRect(-r,-5.5,r*2,2.8);
+    ctx.fillStyle = '#FFFBEB'; ctx.fillRect(-r,-5.5,r*2,.7); ctx.restore();
   }
-  ctx.fillStyle = palette.head;
-  ctx.fill();
-  ctx.strokeStyle = '#090B0F';
-  ctx.lineWidth = 2;
-  ctx.stroke();
+}
 
-  drawEyesAndFace(ctx, charId, true, 'READY', 0, false);
+export function drawRagdollCharacter(ctx: CanvasRenderingContext2D, rag: Ragdoll, id: CharacterId, phase: GamePhase, speedKmh: number): void {
+  ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  const p = getPalette(id, rag.tucking, rag.alive);
+  // Back limbs first, then the body and foreground limbs: tucks stay readable.
+  ctx.save(); ctx.globalAlpha *= .78;
+  drawArmOrLeg(ctx, rag, id, p, 'L', true);
+  drawArmOrLeg(ctx, rag, id, p, 'L', false);
+  ctx.restore();
+  segment(ctx, rag, 'neck-chest', id === 'skeleton' ? 2.8 : 4, p.torso);
+  drawTorso(ctx, rag, id, p);
+  drawArmOrLeg(ctx, rag, id, p, 'R', true);
+  drawArmOrLeg(ctx, rag, id, p, 'R', false);
+  for (const bone of rag.bones) {
+    if (!bone.severed || bone.isPostureSpring) continue;
+    for (const index of [bone.a, bone.b]) ellipse(ctx, rag.nodes[index].x, rag.nodes[index].y, 2.3, 2.3, '#DC2626', false);
+  }
+  const head = rag.nodes[0], neck = rag.nodes[1];
+  ctx.save(); ctx.translate(head.x, head.y);
+  ctx.rotate(Math.atan2(head.y - neck.y, head.x - neck.x) + Math.PI / 2);
+  drawHead(ctx, id, p, head.radius, rag.alive, phase, speedKmh, rag.tuckAmount);
+  ctx.restore(); ctx.restore();
+}
+
+export function drawCharacterPortrait(ctx: CanvasRenderingContext2D, id: CharacterId, size: number): void {
+  ctx.clearRect(0, 0, size, size);
+  ctx.save(); ctx.translate(size / 2, size * .58); ctx.scale(size / 36, size / 36);
+  const p = getPalette(id, false, true);
+  ellipse(ctx,0,14,8,7,p.torso);
+  drawHead(ctx, id, p, 8.5, true, 'READY', 0, 0);
+  ctx.restore();
+}
+
+export type ModelPose = 'ready' | 'tucked' | 'rotated';
+
+export function drawCharacterModelPreview(ctx: CanvasRenderingContext2D, id: CharacterId, width: number, height: number, pose: ModelPose) {
+  ctx.clearRect(0, 0, width, height);
+  const rag = createRagdollOnPlatform(generateLevel(1));
+  rag.tucking = pose === 'tucked';
+  rag.tuckAmount = rag.tucking ? 1 : 0;
+  rag.bodyAngle = pose === 'rotated' ? Math.PI / 2 : 0;
+  stepControlledFlight(rag, 0, 0, 1 / 180);
+  const mass = rag.nodes.reduce((sum,n) => sum+n.mass,0);
+  const cx = rag.nodes.reduce((sum,n) => sum+n.x*n.mass,0) / mass;
+  const cy = rag.nodes.reduce((sum,n) => sum+n.y*n.mass,0) / mass;
+  const scale = Math.min(width / 90, height / 92);
+  ctx.save(); ctx.translate(width / 2, height * .55); ctx.scale(scale,scale); ctx.translate(-cx,-cy);
+  drawRagdollCharacter(ctx,rag,id,rag.tucking ? 'FALLING' : 'READY',0);
   ctx.restore();
 }
