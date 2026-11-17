@@ -44,6 +44,7 @@ export interface Ragdoll {
   maxSpeed: number;
   floorBounceCount: number;
   previousSubDt?: number;
+  impactDepth?: number;
 }
 
 export interface Spike {
@@ -102,7 +103,16 @@ export interface WindZone {
   forceX: number;
 }
 
+export interface ShaftPoint {
+  y: number;
+  left: number;
+  right: number;
+}
+
 export interface LevelConfig {
+  profile: ShaftPoint[];
+  briefing: string;
+  tier: string;
   level: number;
   worldWidth: number;
   topLeftX: number;

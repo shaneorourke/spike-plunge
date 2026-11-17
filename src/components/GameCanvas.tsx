@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { soundEngine } from '../engine/audio';
+import { DEFAULT_AIM, clampAim, launchAngle, readAim, type AimSettings } from '../engine/aim';
 import { generateLevel } from '../engine/levelGen';
 import {
   createGoreWorld,
@@ -23,6 +24,9 @@ import type {
 
 interface GameCanvasProps {
   phase: GamePhase;
+  paused: boolean;
+  aimControlRef: React.MutableRefObject<((aim: AimSettings) => void) | null>;
+  onAimChange: (aim: AimSettings) => void;
   characterId: CharacterId;
   levelNumber: number;
   runNonce?: number;
@@ -43,6 +47,9 @@ interface GameCanvasProps {
 
 export function GameCanvas({
   phase,
+  paused,
+  aimControlRef,
+  onAimChange,
   characterId,
   levelNumber,
   runNonce = 0,
@@ -55,6 +62,9 @@ export function GameCanvas({
   onLevelComplete,
   onRunFailed,
 }: GameCanvasProps) {
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
+  const aimMemory = useRef(new Map<number, AimSettings>());
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const phaseRef = useRef<GamePhase>(phase);
   phaseRef.current = phase;
@@ -98,6 +108,8 @@ export function GameCanvas({
     const lvl = generateLevel(levelNumber);
     const rag = createRagdollOnPlatform(lvl);
     const gore = createGoreWorld();
+    const aim = aimMemory.current.get(levelNumber) ?? DEFAULT_AIM;
+    onAimChange(aim);
 
     simRef.current = {
       level: lvl,
@@ -117,9 +129,8 @@ export function GameCanvas({
       input: {
         tuck: false,
         aimActive: false,
-        aimAngle:
-          lvl.platformSide === 'left' ? -Math.PI * 0.6 : -Math.PI * 0.4,
-        aimPower: 0.45,
+        aimAngle: launchAngle(lvl, aim.elevation),
+        aimPower: aim.power,
       },
       lastTelemetryAt: 0,
       accumulator: 0,
@@ -145,11 +156,22 @@ export function GameCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [levelNumber, phase, runNonce]);
 
+  const updateAim = (settings: AimSettings) => {
+    const sim = simRef.current;
+    if (!sim || phaseRef.current !== 'READY' || pausedRef.current) return;
+    const aim = clampAim(settings);
+    sim.input.aimAngle = launchAngle(sim.level, aim.elevation);
+    sim.input.aimPower = aim.power;
+    aimMemory.current.set(sim.level.level, aim);
+    onAimChange(aim);
+  };
+  aimControlRef.current = updateAim;
+
   // Expose instant dive trigger for thumb CTA button / Spacebar
   useEffect(() => {
     triggerDiveRef.current = () => {
       const sim = simRef.current;
-      if (!sim || phaseRef.current !== 'READY') return;
+      if (!sim || phaseRef.current !== 'READY' || pausedRef.current) return;
       soundEngine.unlock();
       soundEngine.playJump();
       const angle = sim.input.aimAngle;
@@ -164,8 +186,10 @@ export function GameCanvas({
         sim.gore
       );
       sim.input.aimActive = false;
+      sim.elapsed = 0;
       sim.fallTime = 0;
       sim.rimRestTime = 0;
+      phaseRef.current = 'FALLING';
       onPhaseChange('FALLING');
     };
   }, [onPhaseChange, triggerDiveRef]);
@@ -173,18 +197,32 @@ export function GameCanvas({
   // Keyboard controls (Space to jump, Space/S/Down to tuck mid-air)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+      if (e.target instanceof HTMLTextAreaElement ||
+        (e.target instanceof HTMLInputElement && e.target.type !== 'range')) return;
+      if (e.target instanceof HTMLInputElement && e.code.startsWith('Arrow')) return;
+      const sim = simRef.current;
+      if (!sim || pausedRef.current) return;
+      if (phaseRef.current === 'READY' && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+        e.preventDefault();
+        const aim = readAim(sim.level, sim.input.aimAngle, sim.input.aimPower);
+        const fine = e.shiftKey ? .25 : 1;
+        if (e.code === 'ArrowUp') aim.elevation += fine;
+        if (e.code === 'ArrowDown') aim.elevation -= fine;
+        if (e.code === 'ArrowLeft') aim.power -= fine / 100;
+        if (e.code === 'ArrowRight') aim.power += fine / 100;
+        updateAim(aim);
         return;
       }
-      const sim = simRef.current;
-      if (!sim) return;
 
       if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+        e.preventDefault();
         sim.keyInput.tuck = true;
       } else if (e.code === 'Space') {
         e.preventDefault();
+        if (e.repeat) return;
         if (phaseRef.current === 'READY') {
           triggerDiveRef.current?.();
+          sim.keyInput.tuck = true;
         } else if (phaseRef.current === 'FALLING') {
           sim.keyInput.tuck = true;
         }
@@ -199,9 +237,20 @@ export function GameCanvas({
       }
     };
 
+    const releaseControls = () => {
+      const sim = simRef.current;
+      if (!sim) return;
+      sim.keyInput.tuck = false;
+      sim.pointerInput.tuckPointers.clear();
+      sim.pointerInput.aimPointerId = null;
+      sim.input.aimActive = false;
+      externalTuckRef.current = false;
+    };
+    window.addEventListener('blur', releaseControls);
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     return () => {
+      window.removeEventListener('blur', releaseControls);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
@@ -244,7 +293,8 @@ export function GameCanvas({
           externalTuckRef.current;
 
         const FIXED_DT = 1 / 60;
-        sim.accumulator = Math.min(0.1, sim.accumulator + rawDt);
+        const frozen = pausedRef.current || document.hidden;
+        sim.accumulator = frozen ? 0 : Math.min(0.1, sim.accumulator + rawDt);
 
         const curPhase = phaseRef.current;
         let currentWind = 0;
@@ -255,7 +305,7 @@ export function GameCanvas({
           sim.elapsed += FIXED_DT;
           stepHazards(sim.level, sim.elapsed);
 
-          if (curPhase === 'FALLING' || curPhase === 'DYING') {
+          if (!frozen && (curPhase === 'FALLING' || curPhase === 'DYING')) {
             const res = stepRagdollAndGore(
               sim.ragdoll,
               sim.level,
@@ -269,7 +319,7 @@ export function GameCanvas({
           }
         }
 
-        if (curPhase === 'FALLING' || curPhase === 'DYING') {
+        if (!frozen && (curPhase === 'FALLING' || curPhase === 'DYING')) {
           if (speedKmh === 0) {
             speedKmh = getRagdollSpeed(sim.ragdoll, FIXED_DT) * 0.14;
           }
@@ -281,7 +331,12 @@ export function GameCanvas({
 
           // Check fatal transition
           if (curPhase === 'FALLING' && !sim.ragdoll.alive) {
+            phaseRef.current = 'DYING';
             onPhaseChange('DYING');
+            onRunFailed(
+              sim.ragdoll.fatalCause || 'Wall Spikes', sim.ragdoll.limbsLost,
+              Math.round(sim.ragdoll.impactDepth ?? 0), Math.round(sim.ragdoll.maxSpeed)
+            );
           }
 
           // If diver jumped away from the pit and settled back on the outer cliff rim,
@@ -310,25 +365,16 @@ export function GameCanvas({
             const clearedMeters = Math.round(
               (sim.level.floorY - sim.level.platformY) / 10
             );
+            phaseRef.current = 'LANDED';
             onPhaseChange('LANDED');
             onLevelComplete(clearedMeters, Math.round(sim.ragdoll.maxSpeed));
           }
 
           // Check death cam completion -> Game Over
-          if (!sim.ragdoll.alive && sim.ragdoll.deathTime >= 1.45) {
+          if (!sim.ragdoll.alive && sim.ragdoll.deathTime >= 0.65) {
             soundEngine.updateWind(0, false);
-            const center = getRagdollCenter(sim.ragdoll);
-            const fallenMeters = Math.max(
-              0,
-              Math.round((center.y - sim.level.platformY) / 10)
-            );
+            phaseRef.current = 'GAME_OVER';
             onPhaseChange('GAME_OVER');
-            onRunFailed(
-              sim.ragdoll.fatalCause || 'Wall Spikes',
-              sim.ragdoll.limbsLost,
-              fallenMeters,
-              Math.round(sim.ragdoll.maxSpeed)
-            );
           }
         } else {
           soundEngine.updateWind(0, false);
@@ -424,7 +470,7 @@ export function GameCanvas({
     soundEngine.unlock();
     const sim = simRef.current;
     const canvas = canvasRef.current;
-    if (!sim || !canvas) return;
+    if (!sim || !canvas || pausedRef.current) return;
     canvas.setPointerCapture(e.pointerId);
 
     const rect = canvas.getBoundingClientRect();
@@ -447,7 +493,7 @@ export function GameCanvas({
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const sim = simRef.current;
     const canvas = canvasRef.current;
-    if (!sim || !canvas) return;
+    if (!sim || !canvas || pausedRef.current) return;
 
     const rect = canvas.getBoundingClientRect();
     const relX = e.clientX - rect.left;
@@ -462,19 +508,11 @@ export function GameCanvas({
       const dragLen = Math.hypot(dx, dy);
 
       if (dragLen > 8) {
-        // Slingshot: pull down/back to aim up & forward, or drag up/forward directly
-        const aimDx = dy > 0 ? -dx : dx;
-        const aimDy = dy > 0 ? -dy : dy;
-        let angle = Math.atan2(aimDy, aimDx);
-
-        // Strictly restrict to upward jump arcs (cannot aim down through platform)
-        if (angle > 0) {
-          angle = angle < Math.PI * 0.5 ? -0.22 : -Math.PI + 0.22;
-        }
-        angle = Math.max(-Math.PI + 0.22, Math.min(-0.22, angle));
-
-        sim.input.aimAngle = angle;
-        sim.input.aimPower = Math.max(0.15, Math.min(1, dragLen / 115));
+        // Upward flicks and pull-back gestures both set elevation and reach.
+        // Launches always face the shaft; precision is the challenge.
+        const elevation = Math.atan2(Math.abs(dy), Math.abs(dx)) * 180 / Math.PI;
+        const power = dragLen / (rect.width / sim.level.worldWidth) / 115;
+        updateAim({ elevation, power });
       }
     }
   };
@@ -505,6 +543,7 @@ export function GameCanvas({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUpOrCancel}
       onPointerCancel={handlePointerUpOrCancel}
+      aria-label="Spike Plunge playfield. Drag to aim, release to jump. Hold to tuck in flight."
       className="w-full h-full block touch-game-surface cursor-crosshair"
     />
   );

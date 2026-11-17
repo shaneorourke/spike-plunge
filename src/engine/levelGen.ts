@@ -1,23 +1,37 @@
 import type { LevelConfig, Spike } from '../types/game';
 
 const ROUTES = [
-  { name: 'First Flight', shift: 0, width: 0, depth: 0 },
-  { name: 'Long Glide', shift: 12, width: 12, depth: 140 },
-  { name: 'Precision Drop', shift: -10, width: -8, depth: 30 },
-  { name: 'Offset Canyon', shift: 22, width: 10, depth: 200 },
-  { name: 'Needle Practice', shift: 0, width: -16, depth: 80 },
-  { name: 'Endurance Plunge', shift: -18, width: 6, depth: 300 },
+  { name: 'Initiation', shift: 0, throat: 112, at: .74, exit: 128, depth: 0,
+    tip: 'Find the centre. Tuck before the walls close in.' },
+  { name: 'Early Squeeze', shift: 10, throat: 102, at: .40, exit: 138, depth: 80,
+    tip: 'The first pinch arrives early. Commit to your tuck on entry.' },
+  { name: 'Left of Centre', shift: -22, throat: 100, at: .68, exit: 116, depth: 120,
+    tip: 'The landing is offset left. Aim for the passage, not the screen centre.' },
+  { name: 'Hourglass', shift: 0, throat: 94, at: .53, exit: 140, depth: 160,
+    tip: 'A narrow waist opens into a wider landing. Stay compact through the waist.' },
+  { name: 'Right of Passage', shift: 24, throat: 96, at: .72, exit: 112, depth: 140,
+    tip: 'A right-shifted exit rewards a carefully measured launch.' },
+  { name: 'Double Bind', shift: -10, throat: 92, at: .42, exit: 114, depth: 220,
+    tip: 'Two constrictions. Getting past the first is only half the dive.' },
+  { name: 'Late Commitment', shift: 14, throat: 90, at: .84, exit: 100, depth: 260,
+    tip: 'A long approach hides a tight finish. Small aim changes matter.' },
+  { name: 'The Crucible', shift: 0, throat: 90, at: .63, exit: 104, depth: 300,
+    tip: 'The final exam: a narrow throat and little room for an untucked limb.' },
 ];
 
-export function getShaftBoundsAtY(
-  level: LevelConfig,
-  y: number
-): { left: number; right: number; width: number } {
-  const span = Math.max(1, level.floorY - level.platformY);
-  const t = Math.max(0, Math.min(1, (y - level.platformY) / span));
-  const left = level.topLeftX + t * (level.bottomLeftX - level.topLeftX);
-  const right = level.topRightX + t * (level.bottomRightX - level.topRightX);
-  return { left, right, width: right - left };
+export function getShaftBoundsAtY(level: LevelConfig, y: number) {
+  const points = level.profile;
+  const end = points[points.length - 1];
+  if (y <= points[0].y) return { ...points[0], width: points[0].right - points[0].left };
+  for (let i = 1; i < points.length; i++) {
+    if (y > points[i].y) continue;
+    const a = points[i - 1], b = points[i];
+    const t = (y - a.y) / (b.y - a.y);
+    const left = a.left + t * (b.left - a.left);
+    const right = a.right + t * (b.right - a.right);
+    return { left, right, width: right - left };
+  }
+  return { ...end, width: end.right - end.left };
 }
 
 export function generateLevel(level: number): LevelConfig {
@@ -25,17 +39,17 @@ export function generateLevel(level: number): LevelConfig {
   const route = ROUTES[(level - 1) % ROUTES.length];
   // Teach a pattern, then revisit it with a little less clearance. Difficulty
   // approaches a ceiling: no infinitely long shafts or body-width exits.
-  const challenge = 1 - Math.exp(-(level - 1) / 18);
+  const challenge = 1 - Math.exp(-(level - 1) / 24);
   const worldWidth = 420;
-  const centerX = 210 + route.shift * Math.min(1, (level - 1) / 6);
+  const centerX = 210 + route.shift;
   const platformY = 140;
   const topInset = 72 + challenge * 10;
-  const bottomWidth = 150 - challenge * 54 + route.width;
+  const bottomWidth = route.exit - challenge * 22;
   const topLeftX = topInset;
   const topRightX = worldWidth - topInset;
   const bottomLeftX = centerX - bottomWidth * 0.5;
   const bottomRightX = centerX + bottomWidth * 0.5;
-  const shaftHeight = 780 + challenge * 520 + route.depth;
+  const shaftHeight = 760 + challenge * 280 + route.depth;
   const floorY = platformY + shaftHeight;
 
   const platformSide: 'left' | 'right' = level % 2 === 1 ? 'left' : 'right';
@@ -56,11 +70,30 @@ export function generateLevel(level: number): LevelConfig {
   const rightStartY =
     platformSide === 'right' ? platformY + 14 : platformY + 6;
 
+  const throatWidth = route.throat - challenge * 18;
+  const point = (t: number, center: number, width: number) => ({
+    y: platformY + shaftHeight * t, left: center - width / 2, right: center + width / 2,
+  });
+  const profile = [
+    point(0, 210, topRightX - topLeftX),
+    point(.17, 210, 244),
+    point(route.at - .10, centerX, throatWidth + 36),
+    point(route.at, centerX, throatWidth),
+    point(Math.min(.94, route.at + .10), centerX, throatWidth + 30),
+    point(1, centerX, bottomWidth),
+  ];
+  if ((level - 1) % ROUTES.length === 5) {
+    profile.splice(5, 0, point(.77, centerX + 4, throatWidth));
+  }
   const sampleWallX = (y: number, side: 'left' | 'right'): number => {
-    const t = Math.max(0, Math.min(1, (y - platformY) / shaftHeight));
-    return side === 'left'
-      ? topLeftX + t * (bottomLeftX - topLeftX)
-      : topRightX + t * (bottomRightX - topRightX);
+    const end = profile[profile.length - 1];
+    for (let i = 1; i < profile.length; i++) {
+      if (y > profile[i].y) continue;
+      const a = profile[i - 1], b = profile[i];
+      const t = Math.max(0, (y - a.y) / (b.y - a.y));
+      return a[side] + t * (b[side] - a[side]);
+    }
+    return end[side];
   };
 
   let spikeIdx = 0;
@@ -118,6 +151,9 @@ export function generateLevel(level: number): LevelConfig {
 
   return {
     level,
+    profile,
+    briefing: route.tip,
+    tier: level <= 8 ? 'BRUTAL' : level <= 24 ? 'RELENTLESS' : 'EXPERT',
     worldWidth,
     topLeftX,
     topRightX,
@@ -135,6 +171,6 @@ export function generateLevel(level: number): LevelConfig {
     pistons: [],
     saws: [],
     windZones: [],
-    difficultyLabel: `${route.name}${level > 6 ? ` · ${Math.floor((level - 1) / 6) + 1}` : ''}`,
+    difficultyLabel: `${route.name}${level > 8 ? ` · ${Math.floor((level - 1) / 8) + 1}` : ''}`,
   };
 }

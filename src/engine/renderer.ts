@@ -188,7 +188,7 @@ export function renderGame(params: RenderParams): void {
   ctx.beginPath();
   ctx.moveTo(0, level.platformY);
   ctx.lineTo(level.topLeftX, level.platformY);
-  ctx.lineTo(level.bottomLeftX, level.floorY);
+  for (const p of level.profile.slice(1)) ctx.lineTo(p.left, p.y);
   ctx.lineTo(level.bottomLeftX, Math.max(level.floorY, visibleBottom));
   ctx.lineTo(0, Math.max(level.floorY, visibleBottom));
   ctx.closePath();
@@ -198,7 +198,7 @@ export function renderGame(params: RenderParams): void {
   ctx.beginPath();
   ctx.moveTo(level.worldWidth, level.platformY);
   ctx.lineTo(level.topRightX, level.platformY);
-  ctx.lineTo(level.bottomRightX, level.floorY);
+  for (const p of level.profile.slice(1)) ctx.lineTo(p.right, p.y);
   ctx.lineTo(level.bottomRightX, Math.max(level.floorY, visibleBottom));
   ctx.lineTo(level.worldWidth, Math.max(level.floorY, visibleBottom));
   ctx.closePath();
@@ -210,13 +210,13 @@ export function renderGame(params: RenderParams): void {
   ctx.beginPath();
   ctx.moveTo(0, level.platformY);
   ctx.lineTo(level.topLeftX, level.platformY);
-  ctx.lineTo(level.bottomLeftX, level.floorY);
+  for (const p of level.profile.slice(1)) ctx.lineTo(p.left, p.y);
   ctx.stroke();
 
   ctx.beginPath();
   ctx.moveTo(level.worldWidth, level.platformY);
   ctx.lineTo(level.topRightX, level.platformY);
-  ctx.lineTo(level.bottomRightX, level.floorY);
+  for (const p of level.profile.slice(1)) ctx.lineTo(p.right, p.y);
   ctx.stroke();
 
   // 5. Continuous Side Spikes
@@ -278,7 +278,7 @@ export function renderGame(params: RenderParams): void {
     ctx.font = '700 11px "Barlow Condensed", sans-serif';
     ctx.fillStyle = 'rgba(16, 185, 129, 0.8)';
     ctx.textAlign = 'center';
-    ctx.fillText('LANDING ZONE', level.worldWidth * 0.5, fy + 30);
+    ctx.fillText('LANDING ZONE', (floorLeft + floorRight) / 2, fy + 30);
   }
 
   // 11. Aim Trajectory Preview when ready to jump (integrates real horizontal air drag)

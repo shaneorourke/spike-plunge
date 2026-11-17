@@ -454,6 +454,7 @@ function triggerFatalCollision(
   if (wasAlive) {
     ragdoll.alive = false;
     ragdoll.fatalCause = cause;
+    ragdoll.impactDepth = Math.max(0, (impactY - level.platformY) / 10);
     gore.hitStop = 0.045;
     gore.flashAlpha = 0.42;
     gore.shake = Math.min(18, 9 + impactSpeed * 0.012);
@@ -815,9 +816,6 @@ export function stepRagdollAndGore(
         }
 
         if (n.y + n.radius > level.floorY) {
-          if (ragdoll.alive && ragdoll.landTimer === 0) {
-            ragdoll.landTimer = 0.001;
-          }
           const vy = (n.y - n.oldY) / subDt;
           n.y = level.floorY - n.radius;
           // Floor impact dust & sound on heavy slam
@@ -851,7 +849,7 @@ export function stepRagdollAndGore(
     }
 
     // 4. Hazard & Spike Collisions (only lethal before touching the landing zone)
-    if (ragdoll.landTimer === 0) {
+    if (ragdoll.landTimer < 0.15) {
       for (let i = 0; i < ragdoll.nodes.length; i++) {
         const n = ragdoll.nodes[i];
 
@@ -870,7 +868,7 @@ export function stepRagdollAndGore(
             sp.tipY,
             nx,
             -0.2,
-            'Wall Spikes',
+            `${sp.side === 'left' ? 'Left' : 'Right'} wall · ${n.id === 'head' ? 'head' : i >= 8 ? 'leg' : i >= 4 ? 'arm' : 'torso'}${ragdoll.tucking ? '' : ' · untucked'}`,
             level,
             gore,
             subDt
@@ -889,9 +887,14 @@ export function stepRagdollAndGore(
     ragdoll.maxSpeed = kmh;
   }
 
-  // Once the landing zone is touched alive, keep advancing win timer cleanly
-  if (ragdoll.alive && ragdoll.landTimer > 0) {
-    ragdoll.landTimer += rawDt;
+  // A foot grazing the floor is not a clear. The torso must arrive alive,
+  // and all body nodes must remain within the landing pad during confirmation.
+  if (ragdoll.alive) {
+    const core = getRagdollCenter(ragdoll);
+    const safelyDown = core.y >= level.floorY - 32 && ragdoll.nodes.every(n =>
+      n.x - n.radius >= level.bottomLeftX && n.x + n.radius <= level.bottomRightX
+    );
+    ragdoll.landTimer = safelyDown ? ragdoll.landTimer + rawDt : 0;
   }
 
   // Step gore particles & decals

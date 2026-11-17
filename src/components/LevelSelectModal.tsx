@@ -110,6 +110,7 @@ export function LevelSelectModal({
                 </div>
 
                 <div className="mt-2">
+                  <div className="text-[10px] text-slate-300 truncate mb-1">{meta.difficultyLabel}</div>
                   <div className="font-mono text-[11px] tabular-nums text-slate-400">
                     {heightMeters}m
                   </div>

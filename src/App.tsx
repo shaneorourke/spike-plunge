@@ -12,6 +12,8 @@ import {
   X,
 } from 'lucide-react';
 import { CharacterSelectModal } from './components/CharacterSelectModal';
+import { DEFAULT_AIM, type AimSettings } from './engine/aim';
+import { LevelScout } from './components/LevelScout';
 import { GameCanvas } from './components/GameCanvas';
 import { LeaderboardView } from './components/LeaderboardView';
 import { LevelSelectModal } from './components/LevelSelectModal';
@@ -47,6 +49,9 @@ export default function App() {
   const [progress, setProgress] = useState<PlayerProgress>(() =>
     loadPlayerProgress()
   );
+  const [aim, setAim] = useState<AimSettings>(DEFAULT_AIM);
+  const [scoutOpen, setScoutOpen] = useState(false);
+  const aimControlRef = useRef<((aim: AimSettings) => void) | null>(null);
   const [phase, setPhase] = useState<GamePhase>('TITLE');
   const [levelNumber, setLevelNumber] = useState<number>(
     () => loadPlayerProgress().highestStageReached
@@ -278,9 +283,15 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (
-        e.target instanceof HTMLInputElement ||
+        (e.target instanceof HTMLInputElement && e.target.type !== 'range') ||
         e.target instanceof HTMLTextAreaElement
       ) {
+        return;
+      }
+      if (e.repeat || mobileBoardOpen || lockerOpen || stageSelectOpen || scoutOpen) return;
+      if (e.code === 'KeyR' && (phase === 'DYING' || phase === 'GAME_OVER' || phase === 'READY')) {
+        e.preventDefault();
+        handleRetryStage();
         return;
       }
       if (e.code === 'Space' || e.code === 'Enter') {
@@ -298,7 +309,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [handleNextLevel, handleRetryStage, handleStartFromTitle, phase]);
+  }, [handleNextLevel, handleRetryStage, handleStartFromTitle, phase, mobileBoardOpen, lockerOpen, stageSelectOpen, scoutOpen]);
 
   return (
     <div className="h-[100dvh] w-full bg-[#0B0D11] text-slate-100 overflow-hidden lg:py-4 lg:px-6">
@@ -371,6 +382,9 @@ export default function App() {
           <div className="relative flex-1 min-h-0">
             <GameCanvas
               phase={phase}
+              paused={mobileBoardOpen || lockerOpen || stageSelectOpen || scoutOpen}
+              aimControlRef={aimControlRef}
+              onAimChange={setAim}
               characterId={progress.selectedCharacter}
               levelNumber={levelNumber}
               runNonce={runNonce}
@@ -396,6 +410,31 @@ export default function App() {
               </div>
             )}
 
+            {phase === 'READY' && <>
+              {scoutOpen && <LevelScout level={levelMeta} />}
+              <button type="button" onClick={() => setScoutOpen(v => !v)}
+                className="absolute top-10 right-3 z-30 min-h-10 px-3 rounded-lg border border-cyan-500/40 bg-[#11151D]/95 text-cyan-300 text-xs font-bold">
+                {scoutOpen ? 'Close survey' : 'Scout shaft'}
+              </button>
+              {!scoutOpen && <div className="absolute bottom-3 left-3 right-3 rounded-xl border border-slate-700 bg-[#0e141f]/95 p-3 z-10">
+                <div className="flex items-center justify-between text-[10px] font-mono mb-3">
+                  <span className="text-red-400 tracking-widest">{levelMeta.tier}</span>
+                  <span className="text-slate-400">Attempt {(progress.stageStats[levelNumber]?.attempts ?? 0) + 1}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <label className="text-xs text-slate-300">Elevation <strong className="float-right text-amber-400 font-mono">{aim.elevation.toFixed(2)}°</strong>
+                    <input aria-label="Launch elevation" type="range" min="13" max="85" step="0.25" value={aim.elevation}
+                      onChange={e => aimControlRef.current?.({...aim, elevation: Number(e.target.value)})} className="w-full mt-2 accent-amber-400" />
+                  </label>
+                  <label className="text-xs text-slate-300">Power <strong className="float-right text-amber-400 font-mono">{(aim.power * 100).toFixed(1)}%</strong>
+                    <input aria-label="Launch power" type="range" min="15" max="100" step="0.5" value={aim.power * 100}
+                      onChange={e => aimControlRef.current?.({...aim, power: Number(e.target.value) / 100})} className="w-full mt-2 accent-amber-400" />
+                  </label>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-2">Drag to launch · ↑↓ angle · ←→ power · Shift for fine aim</p>
+              </div>}
+            </>}
+
             {/* TITLE OVERLAY */}
             {phase === 'TITLE' && (
               <div className="absolute inset-0 bg-[#0B0D11]/82 backdrop-blur-[2px] flex flex-col justify-center p-6 z-30">
@@ -408,8 +447,8 @@ export default function App() {
                   </h1>
                   <p className="text-sm text-slate-300 leading-relaxed mb-5">
                     Aim your jump off the platform into the V-shaped spike
-                    chute and land cleanly on the floor. Hold to tuck mid-air
-                    as shafts grow longer and narrower every stage.
+                    chute and land in one piece. Eight brutal shaft designs return
+                    with tighter clearances. Study the route. Refine your aim. Earn the landing.
                   </p>
 
                   <div className="mb-5">
@@ -615,9 +654,17 @@ export default function App() {
                     {lastRecordMeta.rank ? ` · Rank #${lastRecordMeta.rank}` : ''}
                   </p>
 
+                  <p className="text-xs text-slate-300 mb-3 leading-relaxed">
+                    {lastSummary?.cause.includes('untucked')
+                      ? 'An exposed limb caught the spikes. Tuck earlier and hold through the constriction.'
+                      : lastSummary?.cause.includes(levelMeta.platformSide === 'left' ? 'Left' : 'Right')
+                      ? 'Try more horizontal reach: add power or lower the elevation. Change one setting at a time.'
+                      : 'Try less horizontal reach: reduce power or raise the elevation. Change one setting at a time.'}
+                  </p>
+                  <p className="text-[10px] font-mono text-cyan-400 mb-3">Aim remembered · R to retry instantly</p>
                   <div className="grid grid-cols-3 gap-2 py-3 border-y border-slate-800 mb-5">
                     <div>
-                      <div className="text-[11px] text-slate-400">Fallen</div>
+                      <div className="text-[11px] text-slate-400">Impact depth</div>
                       <div className="font-mono text-base font-bold tabular-nums text-white">
                         {lastSummary?.fallenMeters ?? 0}m
                       </div>
@@ -643,7 +690,7 @@ export default function App() {
                       className="w-full min-h-[48px] px-5 py-3 rounded-lg bg-amber-500 hover:bg-amber-400 active:scale-[0.99] text-slate-950 font-display text-xl font-extrabold tracking-wide uppercase transition-all flex items-center justify-center gap-2 whitespace-nowrap"
                     >
                       <RotateCcw className="w-4 h-4" />
-                      Continue · Retry Stage {levelNumber}
+                      Retry Stage {levelNumber}
                     </button>
                     <div className="grid grid-cols-2 gap-2">
                       <button
@@ -679,10 +726,10 @@ export default function App() {
             {phase === 'READY' ? (
               <button
                 type="button"
-                onClick={() => triggerDiveRef.current?.()}
+                onClick={() => scoutOpen ? setScoutOpen(false) : triggerDiveRef.current?.()}
                 className="w-full h-full min-h-[48px] rounded-lg bg-amber-500 hover:bg-amber-400 active:scale-[0.99] text-slate-950 font-display text-xl font-extrabold tracking-wide uppercase transition-all whitespace-nowrap"
               >
-                Jump Off Platform
+                {scoutOpen ? 'Return to launch' : 'Launch · Space'}
               </button>
             ) : phase === 'FALLING' ? (
               <button
@@ -706,11 +753,11 @@ export default function App() {
               <div className="w-full flex items-center justify-between px-2 text-xs text-slate-400">
                 <span>
                   {phase === 'DYING'
-                    ? 'Impact fatal — tumbling...'
+                    ? 'Fatal impact · R to retry now'
                     : phase === 'LANDED'
                     ? 'Safe touchdown'
                     : phase === 'GAME_OVER'
-                    ? `Failed Stage ${levelNumber} — tap Continue to retry`
+                    ? `Failed Stage ${levelNumber} — R or tap Retry`
                     : 'Tap Continue or Choose Stage'}
                 </span>
                 <span className="font-mono tabular-nums text-slate-300">
@@ -731,8 +778,8 @@ export default function App() {
                   Stage {levelNumber} · {levelMeta.difficultyLabel}
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Drag up on shaft or press Space to jump · Hold screen, Space,
-                  or S/Down mid-air to tuck
+                  ↑↓ elevation · ←→ power · Shift for fine aim · Space to launch.
+                  Hold Space / S / screen to tuck. R retries after impact.
                 </p>
               </div>
               <button
